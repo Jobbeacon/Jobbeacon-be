@@ -3,6 +3,9 @@ spring:
     name: jobbeacon-be
   profiles:
     active: ${PROFILE_ACTIVE:local}
+  liquibase:
+    enabled: ${LIQUIBASE_ENABLED:true}
+    change-log: classpath:/dbchangelog/db.changelog-master.xml
 
   datasource:
     url: ${DB_URL:jdbc:h2:mem:jobbeacon;MODE=PostgreSQL;DB_CLOSE_DELAY=-1}
