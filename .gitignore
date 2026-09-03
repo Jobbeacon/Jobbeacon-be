@@ -23,4 +23,6 @@ bin/
 *.log
 .env
 
+application-local.yml
+
 firebase-service-account.json
