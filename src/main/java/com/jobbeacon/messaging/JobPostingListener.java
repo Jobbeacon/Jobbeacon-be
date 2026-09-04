@@ -13,7 +13,7 @@ public class JobPostingListener {
 
     @RabbitListener(queues = "${app.rabbitmq.job-posting.queue}")
     public void handleJobPostingMessage(JobPostingMessage message) {
-        log.info("Received job posting: {}", message.getUrl());
+        log.info("Received job posting: {}", message);
         // TODO: Save the job posting to database
     }
 }
