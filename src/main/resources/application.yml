@@ -31,3 +31,13 @@ server:
 logging:
   level:
     com.jobbeacon: INFO
+
+app:
+  cors:
+    allowed-origins: ${CORS_ORIGINS:http://localhost:5173}
+
+auth:
+  provider: firebase
+
+firebase:
+  credentials-path: ${FIREBASE_CREDENTIALS_PATH:firebase-service-account.json}

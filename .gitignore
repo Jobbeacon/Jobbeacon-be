@@ -22,3 +22,7 @@ bin/
 ### Logs / env ###
 *.log
 .env
+
+application-local.yml
+
+firebase-service-account.json
