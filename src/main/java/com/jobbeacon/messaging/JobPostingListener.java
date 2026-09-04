@@ -11,9 +11,15 @@ import org.springframework.stereotype.Component;
 @RequiredArgsConstructor
 public class JobPostingListener {
 
+    private final com.jobbeacon.service.JobService jobService;
+
     @RabbitListener(queues = "${app.rabbitmq.job-posting.queue}")
     public void handleJobPostingMessage(JobPostingMessage message) {
         log.info("Received job posting: {}", message);
-        // TODO: Save the job posting to database
+        try {
+            jobService.processJobPostingMessage(message);
+        } catch (Exception e) {
+            log.error("Error processing job posting message: ", e);
+        }
     }
 }
