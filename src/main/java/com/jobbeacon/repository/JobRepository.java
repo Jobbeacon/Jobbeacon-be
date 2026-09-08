@@ -14,13 +14,15 @@ import java.util.List;
 public interface JobRepository extends BaseRepository<Job> {
 
     @Query(
-            """
-                    select j.id as id, j.title as title, c.name as companyName, j.minSalary as minSalary, j.maxSalary as maxSalary, j.location as location, j.currency as currency
-                    from Job j
-                    left join Company c
-                    where LOWER(j.title) LIKE LOWER(CONCAT('%', :keyword, '%'))
-                    order by j.postedDate desc
-            """
+        """
+            select new com.jobbeacon.dto.response.JobSummaryResponse(
+                j.id, j.title, c.name, j.minSalary, j.maxSalary, j.location, j.currency
+            )
+            from Job j
+            left join j.company c
+            where :keyword is null or :keyword = ''  or LOWER(j.title) LIKE LOWER(CONCAT('%', :keyword, '%'))
+            order by j.postedDate desc
+        """
     )
     Page<JobSummaryResponse> searchJobs(@Param("keyword") String keyword, Pageable pageable);
 }

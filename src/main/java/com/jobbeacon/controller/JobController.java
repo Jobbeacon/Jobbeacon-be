@@ -16,7 +16,7 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class JobController {
 
-    private JobService jobService;
+    private final JobService jobService;
 
     @GetMapping
     public ResponseGeneral<?> searchJobs(@RequestParam Map<String, Object> params){
