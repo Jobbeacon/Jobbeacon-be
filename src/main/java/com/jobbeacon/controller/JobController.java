@@ -1,0 +1,26 @@
+package com.jobbeacon.controller;
+
+import com.jobbeacon.dto.request.JobSearchRequest;
+import com.jobbeacon.dto.response.JobSummaryResponse;
+import com.jobbeacon.dto.response.ResponseGeneral;
+import com.jobbeacon.service.JobService;
+import com.jobbeacon.utils.JsonUtils;
+import lombok.RequiredArgsConstructor;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
+import java.util.Map;
+
+@RestController
+@RequestMapping("/api/v1/jobs")
+@RequiredArgsConstructor
+public class JobController {
+
+    private JobService jobService;
+
+    @GetMapping
+    public ResponseGeneral<?> searchJobs(@RequestParam Map<String, Object> params){
+        JobSearchRequest jobSearchRequest = JsonUtils.convert(params, JobSearchRequest.class);
+        return jobService.searchJobs(jobSearchRequest);
+    }
+}
