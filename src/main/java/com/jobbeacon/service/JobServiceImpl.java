@@ -1,6 +1,10 @@
 package com.jobbeacon.service;
 
 import com.jobbeacon.dto.message.JobPostingMessage;
+import com.jobbeacon.dto.request.JobSearchRequest;
+import com.jobbeacon.dto.response.JobSummaryResponse;
+import com.jobbeacon.dto.response.PageResponse;
+import com.jobbeacon.dto.response.ResponseGeneral;
 import com.jobbeacon.entity.Category;
 import com.jobbeacon.entity.Company;
 import com.jobbeacon.entity.Job;
@@ -14,16 +18,19 @@ import com.jobbeacon.repository.JobSourceMappingRepository;
 import com.jobbeacon.repository.JobSourceRepository;
 import com.jobbeacon.repository.SkillRepository;
 import com.jobbeacon.service.base.BaseServiceImpl;
+import com.jobbeacon.utils.PageUtils;
 import com.jobbeacon.utils.UrlUtils;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.net.URI;
-import java.net.URISyntaxException;
 import java.time.ZoneId;
-import java.time.ZoneOffset;
+import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 
 @Slf4j
@@ -154,5 +161,16 @@ public class JobServiceImpl extends BaseServiceImpl<Job> implements JobService {
             
             jobSourceMappingRepository.save(mapping);
         }
+    }
+
+    @Override
+    public ResponseGeneral<PageResponse<JobSummaryResponse>> searchJobs(JobSearchRequest req) {
+        log.info("[searchJobs] - start search jobs with param: keyword = {}", req.getKeyword());
+        Pageable pageable = PageUtils.buildPageable(req);
+        Page<JobSummaryResponse> data = jobRepository.searchJobs(req.getKeyword(), pageable);
+        List<JobSummaryResponse> jobs = new ArrayList<>(data.getContent());
+
+        PageResponse<JobSummaryResponse> pageResponse = PageResponse.of(jobs, Math.toIntExact(data.getTotalElements()));
+        return ResponseGeneral.ofSuccess( "success", pageResponse);
     }
 }
