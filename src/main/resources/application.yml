@@ -35,6 +35,8 @@ app:
   rabbitmq:
     job-posting:
       queue: job-posting.parsed
+  cors:
+    allowed-origins: ${CORS_ORIGINS:http://localhost:5173}
 
 server:
   port: ${PORT:8080}
@@ -42,10 +44,6 @@ server:
 logging:
   level:
     com.jobbeacon: INFO
-
-app:
-  cors:
-    allowed-origins: ${CORS_ORIGINS:http://localhost:5173}
 
 auth:
   provider: firebase
