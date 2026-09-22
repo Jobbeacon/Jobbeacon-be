@@ -1,4 +1,4 @@
-package com.jobbeacon.service;
+package com.jobbeacon.service.impl;
 
 import com.jobbeacon.dto.message.JobPostingMessage;
 import com.jobbeacon.dto.request.JobSearchRequest;
@@ -17,13 +17,13 @@ import com.jobbeacon.repository.JobRepository;
 import com.jobbeacon.repository.JobSourceMappingRepository;
 import com.jobbeacon.repository.JobSourceRepository;
 import com.jobbeacon.repository.SkillRepository;
+import com.jobbeacon.service.JobService;
 import com.jobbeacon.service.base.BaseServiceImpl;
 import com.jobbeacon.utils.PageUtils;
 import com.jobbeacon.utils.UrlUtils;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
-import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -119,27 +119,37 @@ public class JobServiceImpl extends BaseServiceImpl<Job> implements JobService {
             }
         }
 
+        List<String> locations = new ArrayList<>();
+        if (message.getLocation() != null && !message.getLocation().trim().isEmpty()) {
+            String[] locationArray = message.getLocation().split("\\|");
+            for (String locationName : locationArray) {
+                if (locationName != null && !locationName.trim().isEmpty()) {
+                    locations.add(locationName.trim());
+                }
+            }
+        }
+
         Job job = new Job();
         job.setCompany(company);
         job.setTitle(message.getTitle());
         job.setDescription(message.getDescription());
         job.setExperienceMonths(message.getExperienceMonths());
         job.setEmploymentType(message.getEmploymentType());
-        
+
         if (message.getPostedDate() != null) {
             job.setPostedDate(message.getPostedDate().atZone(ZoneId.of("Asia/Ho_Chi_Minh")).toInstant());
         }
         if (message.getExpiredDate() != null) {
             job.setExpiredDate(message.getExpiredDate().atZone(ZoneId.of("Asia/Ho_Chi_Minh")).toInstant());
         }
-        
+
         job.setMinSalary(message.getMinSalary());
         job.setMaxSalary(message.getMaxSalary());
         job.setCurrency(message.getCurrency());
         job.setSalaryPeriod(message.getSalaryPeriod());
-        job.setLocation(message.getLocation());
+        job.setLocation(locations);
         job.setBenefits(message.getBenefits());
-        
+
         job.setSkills(skills);
         job.setCategories(categories);
 
@@ -150,7 +160,7 @@ public class JobServiceImpl extends BaseServiceImpl<Job> implements JobService {
             JobSourceMapping.JobSourceMappingId mappingId = new JobSourceMapping.JobSourceMappingId();
             mappingId.setJobId(job.getId());
             mappingId.setSourceId(jobSource.getId());
-            
+
             mapping.setId(mappingId);
             mapping.setJob(job);
             mapping.setSource(jobSource);
@@ -158,7 +168,7 @@ public class JobServiceImpl extends BaseServiceImpl<Job> implements JobService {
             if (message.getCrawledAt() != null) {
                 mapping.setCrawledAt(message.getCrawledAt().atZone(ZoneId.of("Asia/Ho_Chi_Minh")).toInstant());
             }
-            
+
             jobSourceMappingRepository.save(mapping);
         }
     }

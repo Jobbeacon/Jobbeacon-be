@@ -54,7 +54,7 @@ CREATE TABLE IF NOT EXISTS job (
   max_salary          BIGINT,
   currency            VARCHAR(100),
   salary_period       VARCHAR(100),
-  location            VARCHAR(500),
+  location            TEXT[],
   benefits            TEXT,
 
   CONSTRAINT pk_job PRIMARY KEY (id)

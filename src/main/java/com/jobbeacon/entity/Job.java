@@ -7,9 +7,12 @@ import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import java.time.Instant;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 
 @Getter
@@ -55,8 +58,9 @@ public class Job extends BaseEntity {
     @Column(name = "salary_period", length = 100)
     private String salaryPeriod;
 
-    @Column(name = "location", length = 500)
-    private String location;
+    @JdbcTypeCode(SqlTypes.ARRAY)
+    @Column(name = "location", columnDefinition = "text[]")
+    private List<String> location;
 
     @Column(name = "benefits", columnDefinition = "TEXT")
     private String benefits;
