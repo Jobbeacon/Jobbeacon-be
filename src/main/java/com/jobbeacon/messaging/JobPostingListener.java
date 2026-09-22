@@ -15,7 +15,7 @@ public class JobPostingListener {
 
     @RabbitListener(queues = "${app.rabbitmq.job-posting.queue}")
     public void handleJobPostingMessage(JobPostingMessage message) {
-        log.info("Received job posting: {}", message);
+        log.debug("Received job posting: {}", message);
         try {
             jobService.processJobPostingMessage(message);
         } catch (Exception e) {
