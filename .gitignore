@@ -26,3 +26,5 @@ bin/
 application-local.yml
 
 firebase-service-account.json
+
+docs/
