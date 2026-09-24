@@ -8,16 +8,19 @@ import com.jobbeacon.dto.response.ResponseGeneral;
 import com.jobbeacon.entity.Category;
 import com.jobbeacon.entity.Company;
 import com.jobbeacon.entity.Job;
+import com.jobbeacon.entity.JobLocation;
 import com.jobbeacon.entity.JobSource;
 import com.jobbeacon.entity.JobSourceMapping;
 import com.jobbeacon.entity.Skill;
 import com.jobbeacon.repository.CategoryRepository;
 import com.jobbeacon.repository.CompanyRepository;
+import com.jobbeacon.repository.JobLocationRepository;
 import com.jobbeacon.repository.JobRepository;
 import com.jobbeacon.repository.JobSourceMappingRepository;
 import com.jobbeacon.repository.JobSourceRepository;
 import com.jobbeacon.repository.SkillRepository;
 import com.jobbeacon.service.JobService;
+import com.jobbeacon.service.LocationMappingService;
 import com.jobbeacon.service.base.BaseServiceImpl;
 import com.jobbeacon.utils.PageUtils;
 import com.jobbeacon.utils.UrlUtils;
@@ -43,13 +46,17 @@ public class JobServiceImpl extends BaseServiceImpl<Job> implements JobService {
     private final CategoryRepository categoryRepository;
     private final JobSourceRepository jobSourceRepository;
     private final JobSourceMappingRepository jobSourceMappingRepository;
+    private final LocationMappingService locationMappingService;
+    private final JobLocationRepository jobLocationRepository;
 
     public JobServiceImpl(JobRepository jobRepository,
                           CompanyRepository companyRepository,
                           SkillRepository skillRepository,
                           CategoryRepository categoryRepository,
                           JobSourceRepository jobSourceRepository,
-                          JobSourceMappingRepository jobSourceMappingRepository) {
+                          JobSourceMappingRepository jobSourceMappingRepository,
+                          LocationMappingService locationMappingService,
+                          JobLocationRepository jobLocationRepository) {
         super(jobRepository);
         this.jobRepository = jobRepository;
         this.companyRepository = companyRepository;
@@ -57,6 +64,8 @@ public class JobServiceImpl extends BaseServiceImpl<Job> implements JobService {
         this.categoryRepository = categoryRepository;
         this.jobSourceRepository = jobSourceRepository;
         this.jobSourceMappingRepository = jobSourceMappingRepository;
+        this.locationMappingService = locationMappingService;
+        this.jobLocationRepository = jobLocationRepository;
     }
 
     @Override
@@ -119,14 +128,21 @@ public class JobServiceImpl extends BaseServiceImpl<Job> implements JobService {
             }
         }
 
-        List<String> locations = new ArrayList<>();
+        List<String> rawLocations = new ArrayList<>();
         if (message.getLocation() != null && !message.getLocation().trim().isEmpty()) {
             String[] locationArray = message.getLocation().split("\\|");
             for (String locationName : locationArray) {
                 if (locationName != null && !locationName.trim().isEmpty()) {
-                    locations.add(locationName.trim());
+                    rawLocations.add(locationName.trim());
                 }
             }
+        }
+        List<LocationMappingService.MappedLocation> mappedLocations = new ArrayList<>();
+        List<String> locations = new ArrayList<>();
+        for (String rawLocation : rawLocations) {
+            LocationMappingService.MappedLocation mapped = locationMappingService.map(rawLocation);
+            mappedLocations.add(mapped);
+            locations.add(mapped.display());
         }
 
         Job job = new Job();
@@ -154,6 +170,15 @@ public class JobServiceImpl extends BaseServiceImpl<Job> implements JobService {
         job.setCategories(categories);
 
         job = jobRepository.save(job);
+        for (int i = 0; i < mappedLocations.size(); i++) {
+            LocationMappingService.MappedLocation mapped = mappedLocations.get(i);
+            JobLocation jobLocation = new JobLocation();
+            jobLocation.setJob(job);
+            jobLocation.setRawLocation(rawLocations.get(i));
+            jobLocation.setProvince(mapped.province());
+            jobLocation.setWard(mapped.ward());
+            jobLocationRepository.save(jobLocation);
+        }
 
         if (jobSource != null) {
             JobSourceMapping mapping = new JobSourceMapping();
