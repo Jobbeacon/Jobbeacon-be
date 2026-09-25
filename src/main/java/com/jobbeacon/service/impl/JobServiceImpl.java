@@ -2,7 +2,12 @@ package com.jobbeacon.service.impl;
 
 import com.jobbeacon.dto.message.JobPostingMessage;
 import com.jobbeacon.dto.request.JobSearchRequest;
+import com.jobbeacon.dto.response.CategoryResponse;
+import com.jobbeacon.dto.response.CompanyResponse;
+import com.jobbeacon.dto.response.JobDetailResponse;
+import com.jobbeacon.dto.response.JobSourceResponse;
 import com.jobbeacon.dto.response.JobSummaryResponse;
+import com.jobbeacon.dto.response.SkillResponse;
 import com.jobbeacon.dto.response.PageResponse;
 import com.jobbeacon.dto.response.ResponseGeneral;
 import com.jobbeacon.entity.Category;
@@ -11,6 +16,7 @@ import com.jobbeacon.entity.Job;
 import com.jobbeacon.entity.JobSource;
 import com.jobbeacon.entity.JobSourceMapping;
 import com.jobbeacon.entity.Skill;
+import com.jobbeacon.exception.base.NotFoundException;
 import com.jobbeacon.repository.CategoryRepository;
 import com.jobbeacon.repository.CompanyRepository;
 import com.jobbeacon.repository.JobRepository;
@@ -28,14 +34,18 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.ZoneId;
+import java.util.Comparator;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.UUID;
 
 @Slf4j
 @Service
 public class JobServiceImpl extends BaseServiceImpl<Job> implements JobService {
+
+    private static final String JOB_NOT_FOUND_CODE = "job_not_found";
 
     private final JobRepository jobRepository;
     private final CompanyRepository companyRepository;
@@ -182,5 +192,61 @@ public class JobServiceImpl extends BaseServiceImpl<Job> implements JobService {
 
         PageResponse<JobSummaryResponse> pageResponse = PageResponse.of(jobs, Math.toIntExact(data.getTotalElements()));
         return ResponseGeneral.ofSuccess( "success", pageResponse);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public ResponseGeneral<JobDetailResponse> getJobDetail(UUID jobId) {
+        log.info("[getJobDetail] - start get job detail with id = {}", jobId);
+        Job job = jobRepository.findDetailById(jobId)
+                .orElseThrow(() -> new NotFoundException(JOB_NOT_FOUND_CODE));
+        return ResponseGeneral.ofSuccess("success", toJobDetailResponse(job));
+    }
+
+    private JobDetailResponse toJobDetailResponse(Job job) {
+        Company company = job.getCompany();
+        CompanyResponse companyResponse = company == null
+                ? null
+                : new CompanyResponse(company.getId(), company.getName(), company.getLogoUrl());
+
+        List<SkillResponse> skills = job.getSkills().stream()
+                .sorted(Comparator.comparing(Skill::getName, String.CASE_INSENSITIVE_ORDER))
+                .map(skill -> new SkillResponse(skill.getId(), skill.getName()))
+                .toList();
+        List<CategoryResponse> categories = job.getCategories().stream()
+                .sorted(Comparator.comparing(Category::getName, String.CASE_INSENSITIVE_ORDER))
+                .map(category -> new CategoryResponse(category.getId(), category.getName()))
+                .toList();
+        List<JobSourceResponse> jobSources = job.getJobSourceMappings().stream()
+                .sorted(Comparator.comparing(
+                        JobSourceMapping::getCrawledAt,
+                        Comparator.nullsLast(Comparator.naturalOrder())
+                ))
+                .map(mapping -> new JobSourceResponse(
+                        mapping.getSource().getId(),
+                        mapping.getSource().getDomain(),
+                        mapping.getJobUrl()
+                ))
+                .toList();
+
+        return new JobDetailResponse(
+                job.getId(),
+                companyResponse,
+                job.getTitle(),
+                job.getDescription(),
+                job.getExperienceMonths(),
+                job.getEmploymentType(),
+                job.getPostedDate(),
+                job.getExpiredDate(),
+                job.getMinSalary(),
+                job.getMaxSalary(),
+                job.getCurrency(),
+                job.getSalaryPeriod(),
+                job.getLocation(),
+                job.getBenefits(),
+                skills,
+                categories,
+                jobSources
+        );
     }
 }

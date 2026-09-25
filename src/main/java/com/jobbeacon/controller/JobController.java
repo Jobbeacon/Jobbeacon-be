@@ -10,6 +10,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/v1/jobs")
@@ -22,5 +23,10 @@ public class JobController {
     public ResponseGeneral<?> searchJobs(@RequestParam Map<String, Object> params){
         JobSearchRequest jobSearchRequest = JsonUtils.convert(params, JobSearchRequest.class);
         return jobService.searchJobs(jobSearchRequest);
+    }
+
+    @GetMapping("/{jobId}")
+    public ResponseGeneral<?> getJobDetail(@PathVariable("jobId") UUID jobId){
+        return jobService.getJobDetail(jobId);
     }
 }
