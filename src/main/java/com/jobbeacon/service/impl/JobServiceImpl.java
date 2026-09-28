@@ -17,16 +17,17 @@ import com.jobbeacon.entity.JobSource;
 import com.jobbeacon.entity.JobSourceMapping;
 import com.jobbeacon.entity.Skill;
 import com.jobbeacon.exception.base.NotFoundException;
-import com.jobbeacon.repository.CategoryRepository;
 import com.jobbeacon.repository.CompanyRepository;
 import com.jobbeacon.repository.JobRepository;
 import com.jobbeacon.repository.JobSourceMappingRepository;
 import com.jobbeacon.repository.JobSourceRepository;
 import com.jobbeacon.repository.SkillRepository;
+import com.jobbeacon.service.CategoryClassificationService;
 import com.jobbeacon.service.JobService;
 import com.jobbeacon.service.base.BaseServiceImpl;
 import com.jobbeacon.utils.PageUtils;
 import com.jobbeacon.utils.UrlUtils;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -43,31 +44,17 @@ import java.util.UUID;
 
 @Slf4j
 @Service
-public class JobServiceImpl extends BaseServiceImpl<Job> implements JobService {
+@RequiredArgsConstructor
+public class JobServiceImpl implements JobService {
 
     private static final String JOB_NOT_FOUND_CODE = "job_not_found";
 
     private final JobRepository jobRepository;
     private final CompanyRepository companyRepository;
     private final SkillRepository skillRepository;
-    private final CategoryRepository categoryRepository;
+    private final CategoryClassificationService categoryClassificationService;
     private final JobSourceRepository jobSourceRepository;
     private final JobSourceMappingRepository jobSourceMappingRepository;
-
-    public JobServiceImpl(JobRepository jobRepository,
-                          CompanyRepository companyRepository,
-                          SkillRepository skillRepository,
-                          CategoryRepository categoryRepository,
-                          JobSourceRepository jobSourceRepository,
-                          JobSourceMappingRepository jobSourceMappingRepository) {
-        super(jobRepository);
-        this.jobRepository = jobRepository;
-        this.companyRepository = companyRepository;
-        this.skillRepository = skillRepository;
-        this.categoryRepository = categoryRepository;
-        this.jobSourceRepository = jobSourceRepository;
-        this.jobSourceMappingRepository = jobSourceMappingRepository;
-    }
 
     @Override
     @Transactional
@@ -113,21 +100,7 @@ public class JobServiceImpl extends BaseServiceImpl<Job> implements JobService {
         }
 
         Set<Category> categories = new HashSet<>();
-        if (message.getIndustry() != null && !message.getIndustry().trim().isEmpty()) {
-            String[] industryArray = message.getIndustry().split(",");
-            for (String categoryName : industryArray) {
-                if (categoryName != null && !categoryName.trim().isEmpty()) {
-                    String finalCategoryName = categoryName.trim();
-                    Category category = categoryRepository.findByNameIgnoreCase(finalCategoryName)
-                            .orElseGet(() -> {
-                                Category newCategory = new Category();
-                                newCategory.setName(finalCategoryName);
-                                return categoryRepository.save(newCategory);
-                            });
-                    categories.add(category);
-                }
-            }
-        }
+        categoryClassificationService.classifyDeepestCategory(message).ifPresent(categories::add);
 
         List<String> locations = new ArrayList<>();
         if (message.getLocation() != null && !message.getLocation().trim().isEmpty()) {
