@@ -1,5 +1,6 @@
 package com.jobbeacon.dto.response;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
@@ -10,6 +11,8 @@ public record JobSummaryResponse(
         Long minSalary,
         Long maxSalary,
         List<String> location,
-        String currency
+        String currency,
+        String companyLogoUrl,
+        Instant postedDate
 ) {
 }

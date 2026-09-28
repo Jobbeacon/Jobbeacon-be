@@ -1,0 +1,19 @@
+CREATE EXTENSION IF NOT EXISTS vector;
+
+ALTER TABLE category
+    ADD COLUMN IF NOT EXISTS level INTEGER;
+
+ALTER TABLE category
+    ADD COLUMN IF NOT EXISTS path TEXT;
+
+ALTER TABLE category
+    ADD COLUMN IF NOT EXISTS embedding vector(1536);
+
+ALTER TABLE category
+    ADD COLUMN IF NOT EXISTS embedding_model VARCHAR(100);
+
+ALTER TABLE category
+    ADD COLUMN IF NOT EXISTS embedding_dimension INTEGER;
+
+ALTER TABLE category
+    ADD COLUMN IF NOT EXISTS embedding_version VARCHAR(50);
