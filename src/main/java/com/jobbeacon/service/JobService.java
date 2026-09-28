@@ -13,7 +13,7 @@ import com.jobbeacon.service.base.BaseService;
 import java.util.List;
 import java.util.UUID;
 
-public interface JobService extends BaseService<Job> {
+public interface JobService {
     void processJobPostingMessage(JobPostingMessage message);
     ResponseGeneral<PageResponse<JobSummaryResponse>> searchJobs(JobSearchRequest jobSearchRequest);
     ResponseGeneral<JobDetailResponse> getJobDetail(UUID jobId);
