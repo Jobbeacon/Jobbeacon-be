@@ -32,6 +32,14 @@ spring:
     password: ${RABBITMQ_PASSWORD:guest}
 
 app:
+  geocode:
+    enabled: true
+    base-url: https://nominatim.openstreetmap.org/search
+    user-agent: jobbeacon-be/1.0 (address normalization)
+    min-interval: 1s
+    timeout: 5s
+    positive-ttl: 180d
+    negative-ttl: 7d
   rabbitmq:
     job-posting:
       queue: job-posting.parsed
