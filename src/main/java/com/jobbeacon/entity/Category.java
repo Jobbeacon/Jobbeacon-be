@@ -7,6 +7,7 @@ import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
+import org.hibernate.annotations.Array;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
@@ -33,6 +34,7 @@ public class Category extends BaseEntity {
     private String path;
 
     @JdbcTypeCode(SqlTypes.VECTOR)
+    @Array(length = 1536)
     @Column(name = "embedding", columnDefinition = "vector(1536)")
     private float[] embedding;
 
