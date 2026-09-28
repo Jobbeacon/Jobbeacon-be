@@ -152,7 +152,8 @@ public class NewLocationConverter {
             for (Ward ward : token.newWards) {
                 other.add(ward.code);
             }
-            if (!(targets.contains(wardCode) && other.size() <= 1 && (other.isEmpty() || other.contains(wardCode)))) {
+            boolean sameWardOnly = other.isEmpty() || (other.size() == 1 && other.contains(wardCode));
+            if (!targets.contains(wardCode) && !(targets.isEmpty() && sameWardOnly)) {
                 return null;
             }
         }
@@ -161,20 +162,23 @@ public class NewLocationConverter {
 
     private Token classify(String segment, ProvinceData data) {
         List<String> forms = adminForms(segment);
+        boolean districtOnly = isExplicitDistrict(segment);
         List<Ward> news = new ArrayList<>();
         Set<String> seen = new LinkedHashSet<>();
-        for (Ward ward : data.wards) {
-            if ((matches(forms, ward.shortFold, ward.shortNfc, data.collisions)
-                    || matches(forms, ward.nameFold, ward.nameNfc, data.collisions))
-                    && seen.add(ward.code)) {
-                news.add(ward);
-            }
-        }
         List<OldWard> olds = new ArrayList<>();
-        for (OldWard old : data.legacy) {
-            if (matches(forms, old.shortFold, old.shortNfc, data.collisions)
-                    || matches(forms, old.nameFold, old.nameNfc, data.collisions)) {
-                olds.add(old);
+        if (!districtOnly) {
+            for (Ward ward : data.wards) {
+                if ((matches(forms, ward.shortFold, ward.shortNfc, data.collisions)
+                        || matches(forms, ward.nameFold, ward.nameNfc, data.collisions))
+                        && seen.add(ward.code)) {
+                    news.add(ward);
+                }
+            }
+            for (OldWard old : data.legacy) {
+                if (matches(forms, old.shortFold, old.shortNfc, data.collisions)
+                        || matches(forms, old.nameFold, old.nameNfc, data.collisions)) {
+                    olds.add(old);
+                }
             }
         }
         List<District> districts = new ArrayList<>();
@@ -293,6 +297,15 @@ public class NewLocationConverter {
 
     private static String join(String[] words, int from, int to) {
         return String.join(" ", java.util.Arrays.copyOfRange(words, from, to));
+    }
+
+    private static boolean isExplicitDistrict(String segment) {
+        String folded = fold(segment);
+        return folded.startsWith("huyen ")
+                || folded.startsWith("quan ")
+                || folded.startsWith("thi xa ")
+                || folded.startsWith("thanh pho ")
+                || folded.startsWith("district ");
     }
 
     private static boolean isCountry(String segment) {

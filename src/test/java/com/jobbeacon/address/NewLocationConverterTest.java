@@ -35,6 +35,21 @@ class NewLocationConverterTest {
     }
 
     @Test
+    void oldCommuneInsideItsDistrictMapsToTheSingleNewWard() {
+        NewLocationConverter.Match quatDong = converter.match(
+                "xã Quất Động, huyện Thường Tín, thành phố Hà Nội");
+        assertEquals("01", quatDong.provinceCode());
+        assertEquals("10231", quatDong.wardCode());
+        assertEquals("", quatDong.street());
+        NewLocationConverter.Match house = converter.match("nhà 13, quất động, thường tín, hà nội");
+        assertEquals("01", house.provinceCode());
+        assertEquals("10231", house.wardCode());
+        assertEquals("nhà 13", house.street());
+        assertNull(converter.match("huyện Thường Tín, thành phố Hà Nội"));
+        assertNull(converter.match("nhà 13, thường tín, hà nội"));
+    }
+
+    @Test
     void leavesSplitOrIncompleteAddressesUnmapped() {
         assertNull(converter.match("Tòa nhà MB, số 18 Lê Văn Lương, Phường Yên Hòa, Ha Noi"));
         assertNull(converter.match("106 Nguyen Van Troi, Phu Nhuan, Ho Chi Minh"));
