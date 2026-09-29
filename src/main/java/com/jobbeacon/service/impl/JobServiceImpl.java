@@ -188,7 +188,7 @@ public class JobServiceImpl implements JobService {
                 .toList();
         List<CategoryResponse> categories = job.getCategories().stream()
                 .sorted(Comparator.comparing(Category::getName, String.CASE_INSENSITIVE_ORDER))
-                .map(category -> new CategoryResponse(category.getId(), category.getName()))
+                .map(this::toCategoryTree)
                 .toList();
         List<JobSourceResponse> jobSources = job.getJobSourceMappings().stream()
                 .sorted(Comparator.comparing(
@@ -221,5 +221,13 @@ public class JobServiceImpl implements JobService {
                 categories,
                 jobSources
         );
+    }
+
+    private CategoryResponse toCategoryTree(Category category) {
+        CategoryResponse node = new CategoryResponse(category.getId(), category.getName(), category.getLevel(), List.of());
+        for (Category parent = category.getParent(); parent != null; parent = parent.getParent()) {
+            node = new CategoryResponse(parent.getId(), parent.getName(), parent.getLevel(), List.of(node));
+        }
+        return node;
     }
 }
