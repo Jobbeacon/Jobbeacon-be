@@ -21,8 +21,17 @@ public class NewLocationConverter {
             "thanh pho", "thi tran", "thi xa", "phuong", "huyen", "quan", "tinh", "xa", "tp"
     };
 
+    /**
+     * Old province names from vietnamadminunits {@code convert_address}:
+     * {@code DICT_PROVINCE} maps each abolished province onto one new province.
+     * Short aliases {@code baria} and {@code vungtau} come from
+     * {@code data/alias_keywords/legacy/alias_province.csv}.
+     */
+    private static final java.util.Map<String, String> LEGACY_PROVINCE = legacyProvinces();
+
     private final List<Province> provinces;
     private final java.util.Map<String, ProvinceData> index;
+    private final SplitIndex splits;
 
     public NewLocationConverter() {
         this(loadDefault());
@@ -43,6 +52,7 @@ public class NewLocationConverter {
             }
             JsonNode all = root.path("index");
             all.fieldNames().forEachRemaining(code -> index.put(code, ProvinceData.read(all.path(code))));
+            splits = SplitIndex.load();
         } catch (IOException exception) {
             throw new UncheckedIOException(exception);
         }
@@ -86,30 +96,41 @@ public class NewLocationConverter {
             indexCursor--;
         }
         java.util.Collections.reverse(locality);
+        String street = String.join(", ", parts.subList(0, indexCursor + 1));
         if (locality.isEmpty()) {
-            return Outcome.empty();
+            return new Outcome(null, null, province.code, street);
         }
         List<Token> tokens = locality.stream().map(Located::token).toList();
         Decision chosen = choose(tokens, data.names);
-        if (chosen == null && tokens.size() > 1) {
-            return Outcome.empty();
+        if (chosen != null && chosen.ward != null) {
+            return new Outcome(new Match(province.code, chosen.ward.code, street), null, province.code, street);
         }
-        if (chosen == null) {
-            chosen = tokens.get(0).decision(data.names);
+        SplitGroup split = splits.select(province.code, locality);
+        if (split != null && street.isBlank()) {
+            return new Outcome(new Match(province.code, split.defaultCode, street), null, province.code, street);
         }
-        String street = String.join(", ", parts.subList(0, indexCursor + 1));
-        if (chosen.ward != null) {
-            return new Outcome(new Match(province.code, chosen.ward.code, street), null);
+        if (split != null) {
+            String query = street + ", " + split.segment + ", " + province.name + ", Vietnam";
+            return new Outcome(
+                    null,
+                    new GeocodeHint(province.code, province.name, query, street, allowedWards(data, split.codes), split.defaultCode, split.sites),
+                    province.code,
+                    street
+            );
         }
-        if (tokens.size() != 1 || street.isBlank()) {
-            return Outcome.empty();
+        if (tokens.size() == 1 && !street.isBlank()) {
+            List<AllowedWard> allowed = allowedWards(data, tokens.get(0).candidateCodes());
+            if (allowed.size() >= 2) {
+                String query = street + ", " + locality.get(0).segment() + ", " + province.name + ", Vietnam";
+                return new Outcome(
+                        null,
+                        new GeocodeHint(province.code, province.name, query, street, allowed, null, List.of()),
+                        province.code,
+                        street
+                );
+            }
         }
-        List<AllowedWard> allowed = allowedWards(data, tokens.get(0).candidateCodes());
-        if (allowed.size() < 2) {
-            return Outcome.empty();
-        }
-        String query = street + ", " + locality.get(0).segment() + ", " + province.name + ", Vietnam";
-        return new Outcome(null, new GeocodeHint(province.code, province.name, query, street, allowed));
+        return new Outcome(null, null, province.code, street);
     }
 
     private static InputStream loadDefault() {
@@ -182,10 +203,12 @@ public class NewLocationConverter {
             }
         }
         List<District> districts = new ArrayList<>();
-        for (District district : data.districts) {
-            if (matches(forms, district.shortFold, district.shortNfc, data.collisions)
-                    || matches(forms, district.nameFold, district.nameNfc, data.collisions)) {
-                districts.add(district);
+        if (!isExplicitWard(segment)) {
+            for (District district : data.districts) {
+                if (matches(forms, district.shortFold, district.shortNfc, data.collisions)
+                        || matches(forms, district.nameFold, district.nameNfc, data.collisions)) {
+                    districts.add(district);
+                }
             }
         }
         return new Token(news, olds, districts);
@@ -195,17 +218,102 @@ public class NewLocationConverter {
         Set<String> hits = new LinkedHashSet<>();
         Province found = null;
         for (String form : adminForms(segment)) {
-            String folded = fold(form);
-            String compact = folded.replace(" ", "");
-            for (Province province : provinces) {
-                if (province.folds.contains(folded) || province.compacts.contains(compact) || province.compacts.contains(folded)) {
-                    if (hits.add(province.code)) {
-                        found = province;
-                    }
+            found = considerOfficial(hits, found, fold(form));
+        }
+        String legacy = legacyKey(fold(segment));
+        found = considerLegacy(hits, found, legacy);
+        if (legacy.startsWith("tinh ")) {
+            found = considerLegacy(hits, found, legacy.substring("tinh ".length()));
+        }
+        return hits.size() == 1 ? found : null;
+    }
+
+    private Province considerOfficial(Set<String> hits, Province found, String folded) {
+        String compact = folded.replace(" ", "");
+        for (Province province : provinces) {
+            if (province.folds.contains(folded) || province.compacts.contains(compact) || province.compacts.contains(folded)) {
+                if (hits.add(province.code)) {
+                    found = province;
                 }
             }
         }
-        return hits.size() == 1 ? found : null;
+        return found;
+    }
+
+    private Province considerLegacy(Set<String> hits, Province found, String key) {
+        if (key == null || key.isBlank()) {
+            return found;
+        }
+        String code = LEGACY_PROVINCE.get(key);
+        if (code == null) {
+            code = LEGACY_PROVINCE.get(key.replace(" ", ""));
+        }
+        if (code == null || !hits.add(code)) {
+            return found;
+        }
+        Province province = provinceByCode(code);
+        if (province == null) {
+            hits.remove(code);
+            return found;
+        }
+        return province;
+    }
+
+    private Province provinceByCode(String code) {
+        for (Province province : provinces) {
+            if (province.code.equals(code)) {
+                return province;
+            }
+        }
+        return null;
+    }
+
+    private static java.util.Map<String, String> legacyProvinces() {
+        java.util.Map<String, String> map = new java.util.HashMap<>();
+        String[][] rows = {
+                {"24", "bac giang"},
+                {"08", "ha giang"},
+                {"15", "yen bai"},
+                {"19", "bac kan"},
+                {"25", "vinh phuc"},
+                {"25", "hoa binh"},
+                {"31", "hai duong"},
+                {"33", "thai binh"},
+                {"37", "ha nam"},
+                {"37", "nam dinh"},
+                {"44", "quang binh"},
+                {"48", "quang nam"},
+                {"51", "kon tum"},
+                {"56", "ninh thuan"},
+                {"52", "binh dinh"},
+                {"66", "phu yen"},
+                {"68", "dak nong"},
+                {"68", "binh thuan"},
+                {"80", "long an"},
+                {"75", "binh phuoc"},
+                {"79", "binh duong"},
+                {"79", "ba ria vung tau"},
+                {"79", "ba ria"},
+                {"79", "vung tau"},
+                {"86", "ben tre"},
+                {"86", "tra vinh"},
+                {"82", "tien giang"},
+                {"91", "kien giang"},
+                {"92", "soc trang"},
+                {"92", "hau giang"},
+                {"96", "bac lieu"}
+        };
+        for (String[] row : rows) {
+            map.put(row[1], row[0]);
+            map.put(row[1].replace(" ", ""), row[0]);
+            map.put("tinh " + row[1], row[0]);
+            map.put(("tinh " + row[1]).replace(" ", ""), row[0]);
+        }
+        return java.util.Map.copyOf(map);
+    }
+
+    private static String legacyKey(String folded) {
+        return folded.replace('–', '-').replace('—', '-').replaceAll("\\s*-\\s*", " ").replaceAll("\\s+", " ").trim();
     }
 
     private static boolean matches(List<String> forms, String officialFold, String officialNfc, Set<String> collisions) {
@@ -297,6 +405,15 @@ public class NewLocationConverter {
 
     private static String join(String[] words, int from, int to) {
         return String.join(" ", java.util.Arrays.copyOfRange(words, from, to));
+    }
+
+    private static boolean isExplicitWard(String segment) {
+        String folded = fold(segment);
+        return folded.startsWith("phuong ")
+                || folded.startsWith("xa ")
+                || folded.startsWith("thi tran ")
+                || folded.startsWith("ward ")
+                || folded.endsWith(" ward");
     }
 
     private static boolean isExplicitDistrict(String segment) {
@@ -417,18 +534,131 @@ public class NewLocationConverter {
     public record AllowedWard(String code, String shortFold, String nameFold) {
     }
 
+    public record SplitSite(String code, double lat, double lon, double km2) {
+    }
+
     public record GeocodeHint(
             String provinceCode,
             String provinceName,
             String query,
             String street,
-            List<AllowedWard> allowed
+            List<AllowedWard> allowed,
+            String defaultCode,
+            List<SplitSite> sites
     ) {
     }
 
-    public record Outcome(Match match, GeocodeHint hint) {
+    private record SplitGroup(String segment, String defaultCode, Set<String> codes, Set<String> districts, List<SplitSite> sites) {
+    }
+
+    private static final class SplitIndex {
+        private final java.util.Map<String, java.util.Map<String, List<SplitGroup>>> byProvince;
+
+        private SplitIndex(java.util.Map<String, java.util.Map<String, List<SplitGroup>>> byProvince) {
+            this.byProvince = byProvince;
+        }
+
+        static SplitIndex load() {
+            try (InputStream source = NewLocationConverter.class.getResourceAsStream("/address/vn-admin-split.json")) {
+                if (source == null) {
+                    return new SplitIndex(java.util.Map.of());
+                }
+                JsonNode root = new ObjectMapper().readTree(source);
+                java.util.Map<String, java.util.Map<String, List<SplitGroup>>> provinces = new java.util.HashMap<>();
+                root.fieldNames().forEachRemaining(provinceCode -> {
+                    java.util.Map<String, List<SplitGroup>> names = new java.util.HashMap<>();
+                    JsonNode byName = root.path(provinceCode);
+                    byName.fieldNames().forEachRemaining(name -> {
+                        List<SplitGroup> groups = new ArrayList<>();
+                        for (JsonNode group : byName.path(name)) {
+                            List<SplitSite> sites = new ArrayList<>();
+                            Set<String> codes = new LinkedHashSet<>();
+                            for (JsonNode site : group.path("sites")) {
+                                String code = site.path("code").asText();
+                                codes.add(code);
+                                sites.add(new SplitSite(
+                                        code,
+                                        site.path("lat").asDouble(),
+                                        site.path("lon").asDouble(),
+                                        site.path("km2").asDouble()
+                                ));
+                            }
+                            groups.add(new SplitGroup(
+                                    "",
+                                    group.path("defaultCode").asText(),
+                                    codes,
+                                    textSet(group.path("districts")),
+                                    List.copyOf(sites)
+                            ));
+                        }
+                        names.put(name, List.copyOf(groups));
+                    });
+                    provinces.put(provinceCode, names);
+                });
+                return new SplitIndex(provinces);
+            } catch (IOException exception) {
+                throw new UncheckedIOException(exception);
+            }
+        }
+
+        SplitGroup select(String provinceCode, List<Located> locality) {
+            Set<String> districtNames = new LinkedHashSet<>();
+            for (Located located : locality) {
+                for (District district : located.token().districts()) {
+                    districtNames.add(compact(district.shortFold()));
+                }
+            }
+            List<SplitGroup> matches = new ArrayList<>();
+            for (Located located : locality) {
+                for (OldWard oldWard : located.token().old()) {
+                    if (oldWard.mapped().size() < 2) {
+                        continue;
+                    }
+                    List<SplitGroup> named = byProvince
+                            .getOrDefault(provinceCode, java.util.Map.of())
+                            .getOrDefault(compact(oldWard.shortFold()), List.of());
+                    Set<String> mapped = new LinkedHashSet<>(oldWard.mapped());
+                    List<SplitGroup> sameCodes = new ArrayList<>();
+                    for (SplitGroup group : named) {
+                        if (group.codes.equals(mapped)) {
+                            sameCodes.add(group);
+                        }
+                    }
+                    List<SplitGroup> chosen = sameCodes;
+                    if (!districtNames.isEmpty()) {
+                        List<SplitGroup> byDistrict = new ArrayList<>();
+                        for (SplitGroup group : sameCodes) {
+                            for (String district : group.districts) {
+                                if (districtNames.contains(district)) {
+                                    byDistrict.add(group);
+                                    break;
+                                }
+                            }
+                        }
+                        if (!byDistrict.isEmpty()) {
+                            chosen = byDistrict;
+                        }
+                    }
+                    if (chosen.size() == 1) {
+                        SplitGroup group = chosen.get(0);
+                        matches.add(new SplitGroup(located.segment(), group.defaultCode, group.codes, group.districts, group.sites));
+                    }
+                }
+            }
+            if (matches.size() != 1) {
+                return null;
+            }
+            return matches.get(0);
+        }
+
+        private static String compact(String folded) {
+            return folded.replace(" ", "");
+        }
+    }
+
+    public record Outcome(Match match, GeocodeHint hint, String provinceCode, String street) {
         static Outcome empty() {
-            return new Outcome(null, null);
+            return new Outcome(null, null, null, "");
         }
     }
 
