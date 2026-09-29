@@ -67,7 +67,8 @@ public class NominatimAddressGeocoder implements AddressGeocoder {
         if (!root.isArray() || root.isEmpty()) {
             return GeoHit.none();
         }
-        JsonNode address = root.get(0).path("address");
+        JsonNode hit = root.get(0);
+        JsonNode address = hit.path("address");
         List<String> places = new ArrayList<>();
         for (String field : PLACE_FIELDS) {
             String value = address.path(field).asText("");
@@ -76,7 +77,19 @@ public class NominatimAddressGeocoder implements AddressGeocoder {
             }
         }
         String province = firstText(address, "state", "province");
-        return new GeoHit(places, province, true);
+        return new GeoHit(places, province, coordinate(hit, "lat"), coordinate(hit, "lon"), true);
+    }
+
+    private static Double coordinate(JsonNode node, String field) {
+        String value = node.path(field).asText("");
+        if (value.isBlank()) {
+            return null;
+        }
+        try {
+            return Double.valueOf(value);
+        } catch (NumberFormatException exception) {
+            return null;
+        }
     }
 
     private static String firstText(JsonNode node, String... fields) {

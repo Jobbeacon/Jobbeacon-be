@@ -46,7 +46,58 @@ class NewLocationConverterTest {
         assertEquals("10231", house.wardCode());
         assertEquals("nhà 13", house.street());
         assertNull(converter.match("huyện Thường Tín, thành phố Hà Nội"));
+        assertEquals("01", converter.resolve("huyện Thường Tín, thành phố Hà Nội").provinceCode());
         assertNull(converter.match("nhà 13, thường tín, hà nội"));
+    }
+
+    @Test
+    void dividedWardUsesTheLibraryDefaultAndSquare() {
+        NewLocationConverter.Match yenHoa = converter.match("Phường Yên Hòa, Hà Nội");
+        assertEquals("01", yenHoa.provinceCode());
+        assertEquals("00175", yenHoa.wardCode());
+        assertEquals("", yenHoa.street());
+
+        NewLocationConverter.Outcome street = converter.resolve("Số 18 Lê Văn Lương, Phường Yên Hòa, Hà Nội");
+        assertNull(street.match());
+        assertEquals("01", street.provinceCode());
+        assertEquals("Số 18 Lê Văn Lương", street.street());
+        assertEquals("00175", street.hint().defaultCode());
+        assertEquals("00175", SplitWardPicker.code(21.0139, 105.796, street.hint().sites()));
+        assertEquals("00166", SplitWardPicker.code(21.0309, 105.788, street.hint().sites()));
+
+        NewLocationConverter.Outcome district = converter.resolve("Quận Cầu Giấy, Hà Nội");
+        assertNull(district.match());
+        assertEquals("01", district.provinceCode());
+
+        NewLocationConverter.Match thoiLai = converter.match("xã Tân Thành, huyện Thới Lai, Cần Thơ");
+        assertEquals("92", thoiLai.provinceCode());
+        assertEquals("31288", thoiLai.wardCode());
+        assertNull(converter.match("xã Tân Thành, Cần Thơ"));
+        assertEquals("92", converter.resolve("xã Tân Thành, Cần Thơ").provinceCode());
+    }
+
+    @Test
+    void explicitPhuongCauGiayIsTheCurrentWard() {
+        NewLocationConverter.Match cauGiay = converter.match("Số 5 Duy Tân, Phường Cầu Giấy, Hà Nội");
+        assertEquals("01", cauGiay.provinceCode());
+        assertEquals("00166", cauGiay.wardCode());
+        assertEquals("Số 5 Duy Tân", cauGiay.street());
+    }
+
+    @Test
+    void oldProvinceBacGiangMapsToBacNinh() {
+        NewLocationConverter.Outcome province = converter.resolve("Bắc Giang");
+        assertNull(province.match());
+        assertEquals("24", province.provinceCode());
+
+        NewLocationConverter.Match ward = converter.match("phường Dĩnh Trì, Tỉnh Bắc Giang");
+        assertEquals("24", ward.provinceCode());
+        assertEquals("07210", ward.wardCode());
+        assertEquals("", ward.street());
+
+        assertNull(converter.match("Bà Rịa - Vũng Tàu"));
+        assertEquals("79", converter.resolve("Bà Rịa - Vũng Tàu").provinceCode());
+        assertEquals("79", converter.resolve("Vũng Tàu").provinceCode());
     }
 
     @Test
@@ -76,6 +127,11 @@ class NewLocationConverterTest {
         assertEquals(
                 "Số 6 Quang Trung, Cửa Nam, Hà Nội",
                 LocationMappingService.display("Số 6 Quang Trung", "Cửa Nam", "Hà Nội")
+        );
+        assertEquals("Hà Nội", LocationMappingService.display("", null, "Hà Nội"));
+        assertEquals(
+                "Số 18 Lê Văn Lương, Hà Nội",
+                LocationMappingService.display("Số 18 Lê Văn Lương", null, "Hà Nội")
         );
     }
 }
