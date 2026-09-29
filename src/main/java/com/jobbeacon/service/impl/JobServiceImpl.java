@@ -13,17 +13,20 @@ import com.jobbeacon.dto.response.ResponseGeneral;
 import com.jobbeacon.entity.Category;
 import com.jobbeacon.entity.Company;
 import com.jobbeacon.entity.Job;
+import com.jobbeacon.entity.JobLocation;
 import com.jobbeacon.entity.JobSource;
 import com.jobbeacon.entity.JobSourceMapping;
 import com.jobbeacon.entity.Skill;
 import com.jobbeacon.exception.base.NotFoundException;
 import com.jobbeacon.repository.CompanyRepository;
+import com.jobbeacon.repository.JobLocationRepository;
 import com.jobbeacon.repository.JobRepository;
 import com.jobbeacon.repository.JobSourceMappingRepository;
 import com.jobbeacon.repository.JobSourceRepository;
 import com.jobbeacon.repository.SkillRepository;
 import com.jobbeacon.service.CategoryClassificationService;
 import com.jobbeacon.service.JobService;
+import com.jobbeacon.service.LocationMappingService;
 import com.jobbeacon.service.base.BaseServiceImpl;
 import com.jobbeacon.utils.PageUtils;
 import com.jobbeacon.utils.UrlUtils;
@@ -55,6 +58,8 @@ public class JobServiceImpl implements JobService {
     private final CategoryClassificationService categoryClassificationService;
     private final JobSourceRepository jobSourceRepository;
     private final JobSourceMappingRepository jobSourceMappingRepository;
+    private final LocationMappingService locationMappingService;
+    private final JobLocationRepository jobLocationRepository;
 
     @Override
     @Transactional
@@ -102,14 +107,21 @@ public class JobServiceImpl implements JobService {
         Set<Category> categories = new HashSet<>();
         categoryClassificationService.classifyDeepestCategory(message).ifPresent(categories::add);
 
-        List<String> locations = new ArrayList<>();
+        List<String> rawLocations = new ArrayList<>();
         if (message.getLocation() != null && !message.getLocation().trim().isEmpty()) {
             String[] locationArray = message.getLocation().split("\\|");
             for (String locationName : locationArray) {
                 if (locationName != null && !locationName.trim().isEmpty()) {
-                    locations.add(locationName.trim());
+                    rawLocations.add(locationName.trim());
                 }
             }
+        }
+        List<LocationMappingService.MappedLocation> mappedLocations = new ArrayList<>();
+        List<String> locations = new ArrayList<>();
+        for (String rawLocation : rawLocations) {
+            LocationMappingService.MappedLocation mapped = locationMappingService.map(rawLocation);
+            mappedLocations.add(mapped);
+            locations.add(mapped.display());
         }
 
         Job job = new Job();
@@ -137,6 +149,15 @@ public class JobServiceImpl implements JobService {
         job.setCategories(categories);
 
         job = jobRepository.save(job);
+        for (int i = 0; i < mappedLocations.size(); i++) {
+            LocationMappingService.MappedLocation mapped = mappedLocations.get(i);
+            JobLocation jobLocation = new JobLocation();
+            jobLocation.setJob(job);
+            jobLocation.setRawLocation(rawLocations.get(i));
+            jobLocation.setProvince(mapped.province());
+            jobLocation.setWard(mapped.ward());
+            jobLocationRepository.save(jobLocation);
+        }
 
         if (jobSource != null) {
             JobSourceMapping mapping = new JobSourceMapping();
