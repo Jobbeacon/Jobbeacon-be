@@ -4,7 +4,6 @@ import com.jobbeacon.address.AddressGeocoder;
 import com.jobbeacon.address.GeocodeCache;
 import com.jobbeacon.address.NewLocationConverter;
 import com.jobbeacon.address.SplitWardPicker;
-import com.jobbeacon.address.WardPicker;
 import com.jobbeacon.configuration.GeocodeProperties;
 import com.jobbeacon.entity.Province;
 import com.jobbeacon.entity.Ward;
@@ -50,17 +49,11 @@ public class LocationMappingService {
             return fromCodes(rawLocation, outcome.match().provinceCode(), outcome.match().wardCode(), outcome.match().street());
         }
         NewLocationConverter.GeocodeHint hint = outcome.hint();
-        if (hint != null && hint.sites() != null && !hint.sites().isEmpty()) {
-            String wardCode = geocodeProperties.enabled() ? geocodedSplit(hint) : null;
+        if (hint != null) {
+            String wardCode = geocodeProperties.enabled() ? geocodedWard(hint) : null;
             if (wardCode == null) {
                 wardCode = hint.defaultCode();
             }
-            if (wardCode != null) {
-                return fromCodes(rawLocation, hint.provinceCode(), wardCode, hint.street());
-            }
-        }
-        if (hint != null && geocodeProperties.enabled()) {
-            String wardCode = geocodedWard(hint);
             if (wardCode != null) {
                 return fromCodes(rawLocation, hint.provinceCode(), wardCode, hint.street());
             }
@@ -71,31 +64,10 @@ public class LocationMappingService {
         return MappedLocation.unmapped(rawLocation);
     }
 
-    private String geocodedSplit(NewLocationConverter.GeocodeHint hint) {
-        String key = sha256(NewLocationConverter.fold(hint.query()));
-        String cached = geocodeCache.get(key);
-        if (cached != null) {
-            return cached.isEmpty() ? null : cached;
-        }
-        geocodeCache.awaitTurn();
-        AddressGeocoder.GeoHit hit = geocoder.lookup(hint.query());
-        if (!hit.definitive()) {
-            return null;
-        }
-        if (hit.latitude() == null || hit.longitude() == null) {
-            geocodeCache.put(key, MISS, geocodeProperties.negativeTtl());
-            return null;
-        }
-        String wardCode = SplitWardPicker.code(hit.latitude(), hit.longitude(), hint.sites());
-        if (wardCode == null) {
-            geocodeCache.put(key, MISS, geocodeProperties.negativeTtl());
-            return null;
-        }
-        geocodeCache.put(key, wardCode, geocodeProperties.positiveTtl());
-        return wardCode;
-    }
-
     private String geocodedWard(NewLocationConverter.GeocodeHint hint) {
+        if (hint.sites() == null || hint.sites().isEmpty()) {
+            return null;
+        }
         String key = sha256(NewLocationConverter.fold(hint.query()));
         String cached = geocodeCache.get(key);
         if (cached != null) {
@@ -106,11 +78,12 @@ public class LocationMappingService {
         if (!hit.definitive()) {
             return null;
         }
-        if (!provinceAcceptable(hit.provinceText(), hint.provinceName())) {
+        if (hit.latitude() == null || hit.longitude() == null
+                || !provinceAcceptable(hit.provinceText(), hint.provinceName())) {
             geocodeCache.put(key, MISS, geocodeProperties.negativeTtl());
             return null;
         }
-        String wardCode = WardPicker.code(hit.places(), hint.allowed());
+        String wardCode = SplitWardPicker.code(hit.latitude(), hit.longitude(), hint.sites(), hint.defaultCode() == null);
         if (wardCode == null) {
             geocodeCache.put(key, MISS, geocodeProperties.negativeTtl());
             return null;

@@ -3,10 +3,6 @@ package com.jobbeacon.address;
 import java.util.ArrayList;
 import java.util.List;
 
-/**
- * Chooses one new ward when an old ward was divided, using the square around each
- * ward center from vietnamadminunits {@code convert_address}.
- */
 public final class SplitWardPicker {
 
     private static final double EARTH_KM = 6371.0088;
@@ -15,6 +11,10 @@ public final class SplitWardPicker {
     }
 
     public static String code(double latitude, double longitude, List<NewLocationConverter.SplitSite> sites) {
+        return code(latitude, longitude, sites, true);
+    }
+
+    public static String code(double latitude, double longitude, List<NewLocationConverter.SplitSite> sites, boolean nearest) {
         if (sites == null || sites.isEmpty()) {
             return null;
         }
@@ -24,8 +24,22 @@ public final class SplitWardPicker {
                 inside.add(site);
             }
         }
-        NewLocationConverter.SplitSite chosen = inside.size() == 1 ? inside.get(0) : nearest(latitude, longitude, sites);
-        return chosen == null ? null : chosen.code();
+        if (inside.size() == 1) {
+            return inside.get(0).code();
+        }
+        if (!nearest) {
+            return null;
+        }
+        NewLocationConverter.SplitSite chosen = nearest(latitude, longitude, sites);
+        if (chosen == null || meters(latitude, longitude, chosen.lat(), chosen.lon()) > reachMeters(chosen)) {
+            return null;
+        }
+        return chosen.code();
+    }
+
+    private static double reachMeters(NewLocationConverter.SplitSite site) {
+        double sideKm = site.km2() > 0 ? Math.sqrt(site.km2()) : 1.0;
+        return Math.max(1.5, 1.5 * sideKm) * 1000;
     }
 
     private static boolean contains(double latitude, double longitude, NewLocationConverter.SplitSite site) {
