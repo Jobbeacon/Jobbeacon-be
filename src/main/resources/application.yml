@@ -49,9 +49,13 @@ app:
     api-key: ${GEMINI_API_KEY:}
     embedding-model: ${GEMINI_EMBEDDING_MODEL:gemini-embedding-2}
     embedding-dimension: ${GEMINI_EMBEDDING_DIMENSION:1536}
+    chat-model: ${GEMINI_CHAT_MODEL:gemini-2.5-flash}
   category-classification:
     min-score: ${CATEGORY_CLASSIFICATION_MIN_SCORE:0.72}
     min-margin: ${CATEGORY_CLASSIFICATION_MIN_MARGIN:0.03}
+  skill-resolution:
+    min-similarity: ${SKILL_RESOLUTION_MIN_SIMILARITY:0.7}
+    top-k: ${SKILL_RESOLUTION_TOP_K:10}
 
 server:
   port: ${PORT:8080}
