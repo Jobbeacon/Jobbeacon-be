@@ -101,6 +101,16 @@
       <artifactId>jsoup</artifactId>
       <version>1.18.1</version>
     </dependency>
+    <dependency>
+      <groupId>co.elastic.clients</groupId>
+      <artifactId>elasticsearch-java</artifactId>
+      <version>8.15.3</version>
+    </dependency>
+    <dependency>
+      <groupId>org.elasticsearch.client</groupId>
+      <artifactId>elasticsearch-rest-client</artifactId>
+      <version>8.15.3</version>
+    </dependency>
   </dependencies>
 
   <build>

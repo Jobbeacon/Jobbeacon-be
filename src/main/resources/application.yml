@@ -37,7 +37,7 @@ app:
     base-url: https://nominatim.openstreetmap.org/search
     user-agent: jobbeacon-be/1.0 (address normalization)
     min-interval: 1s
-    timeout: 5s
+    timeout: 15s
     positive-ttl: 180d
     negative-ttl: 7d
   rabbitmq:
@@ -52,6 +52,11 @@ app:
   category-classification:
     min-score: ${CATEGORY_CLASSIFICATION_MIN_SCORE:0.72}
     min-margin: ${CATEGORY_CLASSIFICATION_MIN_MARGIN:0.03}
+  elasticsearch:
+    url: ${ELASTICSEARCH_URL:http://localhost:9200}
+    index: ${ELASTICSEARCH_JOB_INDEX:jobs}
+  search:
+    backfill-on-startup: ${SEARCH_BACKFILL_ON_STARTUP:false}
 
 server:
   port: ${PORT:8080}
