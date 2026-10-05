@@ -154,23 +154,38 @@ public class SkillResolutionServiceImpl implements SkillResolutionService {
 
     private Optional<Skill> classifyWithLlm(String name, List<SkillDistance> candidates) {
         String prompt = buildClassificationPrompt(name, candidates);
+        String response;
         try {
-            String response = geminiChatClient.generateJson(CLASSIFICATION_SYSTEM_PROMPT, prompt);
-            JsonNode matchIndex = objectMapper.readTree(response).path(MATCH_INDEX_FIELD);
-            if (!matchIndex.canConvertToInt()) {
-                log.warn("[classifyWithLlm] Invalid LLM response for '{}': {}", name, response);
-                return Optional.empty();
-            }
-
-            int index = matchIndex.asInt();
-            if (index < 1 || index > candidates.size()) {
-                return Optional.empty();
-            }
-            return Optional.of(candidates.get(index - 1).skill());
+            response = geminiChatClient.generateJson(CLASSIFICATION_SYSTEM_PROMPT, prompt);
         } catch (Exception e) {
-            log.error("[classifyWithLlm] Failed to classify skill '{}'. Treat as new skill.", name, e);
+            log.error("[classifyWithLlm] Failed to call LLM for skill '{}'. Treat as new skill.", name, e);
             return Optional.empty();
         }
+        log.info("[classifyWithLlm] LLM response for '{}': {}", name, response);
+
+        JsonNode matchIndex;
+        try {
+            matchIndex = objectMapper.readTree(response).path(MATCH_INDEX_FIELD);
+        } catch (Exception e) {
+            log.warn("[classifyWithLlm] LLM response for '{}' is not valid JSON: {}", name, response);
+            return Optional.empty();
+        }
+
+        if (!matchIndex.canConvertToInt()) {
+            log.warn("[classifyWithLlm] Invalid LLM response for '{}': {}", name, response);
+            return Optional.empty();
+        }
+
+        int index = matchIndex.asInt();
+        if (index < 0 || index > candidates.size()) {
+            log.warn("[classifyWithLlm] LLM returned out-of-range match_index {} for '{}' ({} candidates)",
+                    index, name, candidates.size());
+            return Optional.empty();
+        }
+        if (index == 0) {
+            return Optional.empty();
+        }
+        return Optional.of(candidates.get(index - 1).skill());
     }
 
     private String buildClassificationPrompt(String name, List<SkillDistance> candidates) {

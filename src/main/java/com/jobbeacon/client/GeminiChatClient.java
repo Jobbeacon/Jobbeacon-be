@@ -1,43 +1,29 @@
 package com.jobbeacon.client;
 
-import com.google.genai.Client;
 import com.google.genai.types.Content;
+import com.google.genai.types.FinishReason;
 import com.google.genai.types.GenerateContentConfig;
 import com.google.genai.types.GenerateContentResponse;
 import com.google.genai.types.Part;
-import jakarta.annotation.PostConstruct;
+import com.jobbeacon.exception.GeminiEmptyResponseException;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 @Slf4j
 @Component
+@RequiredArgsConstructor
 public class GeminiChatClient {
 
     private static final String JSON_MIME_TYPE = "application/json";
 
-    @Value("${app.gemini.api-key:}")
-    private String apiKey;
-
     @Value("${app.gemini.chat-model:gemini-2.5-flash}")
     private String chatModel;
 
-    private Client client;
-
-    @PostConstruct
-    void init() {
-        if (apiKey == null || apiKey.isBlank()) {
-            log.warn("Gemini API key is not configured (app.gemini.api-key). LLM features will be skipped.");
-            return;
-        }
-
-        this.client = Client.builder().apiKey(apiKey).build();
-    }
+    private final GeminiRetryExecutor retryExecutor;
 
     public String generateJson(String systemPrompt, String userPrompt) {
-        if (client == null) {
-            throw new IllegalStateException("Gemini API key is not configured (app.gemini.api-key)");
-        }
         if (userPrompt == null || userPrompt.isBlank()) {
             throw new IllegalArgumentException("Cannot generate content from empty prompt");
         }
@@ -49,13 +35,23 @@ public class GeminiChatClient {
             configBuilder.systemInstruction(Content.fromParts(Part.fromText(systemPrompt)));
         }
 
-        GenerateContentResponse response = client.models.generateContent(chatModel, userPrompt, configBuilder.build());
+        GenerateContentConfig config = configBuilder.build();
+        return retryExecutor.execute("generateContent(" + chatModel + ")",
+                client -> extractText(client.models.generateContent(chatModel, userPrompt, config)));
+    }
 
+    private String extractText(GenerateContentResponse response) {
         String text = response.text();
-        if (text == null || text.isBlank()) {
-            throw new IllegalStateException("Gemini returned an empty response");
+        if (text != null && !text.isBlank()) {
+            return text;
         }
 
-        return text;
+        FinishReason finishReason = response.finishReason();
+        String details = "finishReason=%s, promptFeedback=%s".formatted(
+                finishReason, response.promptFeedback().map(Object::toString).orElse(null));
+        if (finishReason != null && finishReason.knownEnum() != FinishReason.Known.STOP) {
+            throw new IllegalStateException("Gemini returned no text (" + details + ")");
+        }
+        throw new GeminiEmptyResponseException("Gemini returned an empty response (" + details + ")");
     }
 }
