@@ -16,12 +16,6 @@ public interface SkillRepository extends BaseRepository<Skill> {
 
     Optional<Skill> findByNormalizedName(String normalizedName);
 
-    boolean existsByNormalizedName(String normalizedName);
-
-    List<Skill> findAllByNormalizedNameIsNull();
-
-    List<Skill> findAllByEmbeddingIsNull();
-
     @Query("""
             select new com.jobbeacon.repository.projection.SkillDistance(s, cosine_distance(s.embedding, :embedding))
             from Skill s

@@ -20,7 +20,6 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -32,6 +31,45 @@ public class SkillResolutionServiceImpl implements SkillResolutionService {
     public static final String EMBEDDING_TASK_TYPE = "SEMANTIC_SIMILARITY";
 
     private static final String MATCH_INDEX_FIELD = "match_index";
+
+    private static final String CLASSIFICATION_SYSTEM_PROMPT = """
+            You are deduplicating the skill taxonomy of a Vietnamese job platform.
+            Skills can be technical (programming languages, frameworks, tools), professional
+            (accounting, sales, design, ...) or soft skills, written in Vietnamese or English.
+
+            Task: decide whether the NEW SKILL is exactly the same skill as one of the EXISTING SKILLS,
+            only written differently.
+
+            Count as the SAME skill (match):
+            - Spelling, spacing, punctuation or suffix variants:
+              "ReactJS" = "React.js" = "React", "NodeJS" = "Node.js", "Golang" = "Go", "Team work" = "Teamwork".
+            - Abbreviation vs full name: "JS" = "JavaScript", "K8s" = "Kubernetes", "UI/UX" = "UI/UX Design".
+            - Version-less name: "Python 3" = "Python", "Angular 17" = "Angular".
+            - Vietnamese vs English translation of the same skill:
+              "làm việc nhóm" = "teamwork", "giao tiếp" = "communication", "kế toán" = "accounting",
+              "tiếng Anh" = "English".
+            - Vietnamese wording variants with the same meaning, including missing diacritics:
+              "làm việc nhóm" = "làm việc theo nhóm" = "kỹ năng làm việc nhóm" = "lam viec nhom",
+              "giải quyết vấn đề" = "kỹ năng giải quyết vấn đề",
+              "tin học văn phòng" = "MS Office".
+              Generic prefixes such as "kỹ năng", "khả năng", "skill", "kinh nghiệm" do not change the skill.
+
+            NOT the same skill (no match):
+            - Related or overlapping technologies: "Java" vs "JavaScript", "React" vs "React Native",
+              "SQL" vs "MySQL", "AWS" vs "AWS Lambda", "Spring" vs "Spring Boot".
+            - A broader or narrower skill: "Marketing" vs "Digital Marketing", "Excel" vs "tin học văn phòng",
+              "tiếng Anh" vs "tiếng Anh giao tiếp", "làm việc nhóm" vs "quản lý nhóm".
+            - Opposite or different soft skills: "làm việc nhóm" vs "làm việc độc lập",
+              "giao tiếp" vs "thuyết trình", "chịu được áp lực" vs "quản lý thời gian".
+            - Skills that share words but differ in meaning: "kế toán thuế" vs "kế toán tổng hợp",
+              "thiết kế đồ họa" vs "thiết kế nội thất".
+
+            When unsure, do NOT match: a wrong merge is worse than a duplicate.
+            If several existing skills match, choose the one listed first.
+
+            Input: a NEW SKILL and a numbered list of EXISTING SKILLS.
+            Respond with JSON only: {"match_index": <number of the matched existing skill, or 0 if none>}
+            """;
 
     private final SkillRepository skillRepository;
     private final SkillAliasRepository skillAliasRepository;
@@ -117,7 +155,7 @@ public class SkillResolutionServiceImpl implements SkillResolutionService {
     private Optional<Skill> classifyWithLlm(String name, List<SkillDistance> candidates) {
         String prompt = buildClassificationPrompt(name, candidates);
         try {
-            String response = geminiChatClient.generateJson(prompt);
+            String response = geminiChatClient.generateJson(CLASSIFICATION_SYSTEM_PROMPT, prompt);
             JsonNode matchIndex = objectMapper.readTree(response).path(MATCH_INDEX_FIELD);
             if (!matchIndex.canConvertToInt()) {
                 log.warn("[classifyWithLlm] Invalid LLM response for '{}': {}", name, response);
@@ -138,29 +176,14 @@ public class SkillResolutionServiceImpl implements SkillResolutionService {
     private String buildClassificationPrompt(String name, List<SkillDistance> candidates) {
         StringBuilder candidateText = new StringBuilder();
         for (int i = 0; i < candidates.size(); i++) {
-            SkillDistance candidate = candidates.get(i);
-            candidateText.append(String.format(Locale.ROOT, "%d. %s (similarity: %.3f)%n",
-                    i + 1, candidate.skill().getName(), 1.0 - candidate.distance()));
+            candidateText.append(i + 1).append(". ").append(candidates.get(i).skill().getName()).append('\n');
         }
 
         return """
-                You are deduplicating a skill taxonomy for a job platform.
-                Decide whether the NEW SKILL is the same skill as one of the EXISTING SKILLS,
-                only written differently (abbreviation, alternative spelling, version-less name,
-                translation, suffix like "JS"/".js"/"framework", ...).
-
-                Rules:
-                - Only match when both names refer to exactly the same skill/technology.
-                - Related but different skills are NOT a match (e.g. "Java" vs "JavaScript",
-                  "React" vs "React Native", "SQL" vs "MySQL", "AWS" vs "AWS Lambda").
-                - If there is no exact match, return 0.
-
                 NEW SKILL: %s
 
                 EXISTING SKILLS:
-                %s
-                Respond with JSON only: {"match_index": <number of the matched existing skill, or 0>}
-                """.formatted(name, candidateText);
+                %s""".formatted(name, candidateText);
     }
 
     private Skill createSkill(String name, String normalized, float[] embedding) {

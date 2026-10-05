@@ -1,8 +1,10 @@
 package com.jobbeacon.client;
 
 import com.google.genai.Client;
+import com.google.genai.types.Content;
 import com.google.genai.types.GenerateContentConfig;
 import com.google.genai.types.GenerateContentResponse;
+import com.google.genai.types.Part;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -32,20 +34,22 @@ public class GeminiChatClient {
         this.client = Client.builder().apiKey(apiKey).build();
     }
 
-    public String generateJson(String prompt) {
+    public String generateJson(String systemPrompt, String userPrompt) {
         if (client == null) {
             throw new IllegalStateException("Gemini API key is not configured (app.gemini.api-key)");
         }
-        if (prompt == null || prompt.isBlank()) {
+        if (userPrompt == null || userPrompt.isBlank()) {
             throw new IllegalArgumentException("Cannot generate content from empty prompt");
         }
 
-        GenerateContentConfig config = GenerateContentConfig.builder()
+        GenerateContentConfig.Builder configBuilder = GenerateContentConfig.builder()
                 .responseMimeType(JSON_MIME_TYPE)
-                .temperature(0f)
-                .build();
+                .temperature(0f);
+        if (systemPrompt != null && !systemPrompt.isBlank()) {
+            configBuilder.systemInstruction(Content.fromParts(Part.fromText(systemPrompt)));
+        }
 
-        GenerateContentResponse response = client.models.generateContent(chatModel, prompt, config);
+        GenerateContentResponse response = client.models.generateContent(chatModel, userPrompt, configBuilder.build());
 
         String text = response.text();
         if (text == null || text.isBlank()) {
