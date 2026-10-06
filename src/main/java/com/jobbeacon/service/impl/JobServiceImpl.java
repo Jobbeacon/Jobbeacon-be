@@ -176,7 +176,21 @@ public class JobServiceImpl implements JobService {
 
     @Override
     public ResponseGeneral<PageResponse<JobSummaryResponse>> searchJobs(JobSearchRequest req) {
-        log.info("[searchJobs] - start search jobs with param: keyword = {}", req.getKeyword());
+        log.info(
+                "[searchJobs] keyword={} location={} locations={} categories={} skills={} salary={}-{} experience={} employment={} postedWithin={} sources={} sort={}",
+                req.getKeyword(),
+                req.getLocation(),
+                req.getLocations(),
+                req.getCategories(),
+                req.getSkills(),
+                req.getMinSalary(),
+                req.getMaxSalary(),
+                req.getExperience(),
+                req.getEmploymentTypes(),
+                req.getPostedWithin(),
+                req.getSources(),
+                req.getSortBy()
+        );
         return ResponseGeneral.ofSuccess("success", jobElasticsearchRepository.search(req));
     }
 
