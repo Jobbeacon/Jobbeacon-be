@@ -2,25 +2,35 @@ package com.jobbeacon.service.impl;
 
 import com.jobbeacon.dto.message.JobPostingMessage;
 import com.jobbeacon.dto.request.JobSearchRequest;
+import com.jobbeacon.dto.response.CategoryResponse;
+import com.jobbeacon.dto.response.CompanyResponse;
+import com.jobbeacon.dto.response.JobDetailResponse;
+import com.jobbeacon.dto.response.JobSourceResponse;
 import com.jobbeacon.dto.response.JobSummaryResponse;
+import com.jobbeacon.dto.response.SkillResponse;
 import com.jobbeacon.dto.response.PageResponse;
 import com.jobbeacon.dto.response.ResponseGeneral;
 import com.jobbeacon.entity.Category;
 import com.jobbeacon.entity.Company;
 import com.jobbeacon.entity.Job;
+import com.jobbeacon.entity.JobLocation;
 import com.jobbeacon.entity.JobSource;
 import com.jobbeacon.entity.JobSourceMapping;
 import com.jobbeacon.entity.Skill;
-import com.jobbeacon.repository.CategoryRepository;
+import com.jobbeacon.exception.base.NotFoundException;
 import com.jobbeacon.repository.CompanyRepository;
+import com.jobbeacon.repository.JobLocationRepository;
 import com.jobbeacon.repository.JobRepository;
 import com.jobbeacon.repository.JobSourceMappingRepository;
 import com.jobbeacon.repository.JobSourceRepository;
 import com.jobbeacon.repository.SkillRepository;
+import com.jobbeacon.service.CategoryClassificationService;
 import com.jobbeacon.service.JobService;
+import com.jobbeacon.service.LocationMappingService;
 import com.jobbeacon.service.base.BaseServiceImpl;
 import com.jobbeacon.utils.PageUtils;
 import com.jobbeacon.utils.UrlUtils;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -28,36 +38,28 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.ZoneId;
+import java.util.Comparator;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.UUID;
 
 @Slf4j
 @Service
-public class JobServiceImpl extends BaseServiceImpl<Job> implements JobService {
+@RequiredArgsConstructor
+public class JobServiceImpl implements JobService {
+
+    private static final String JOB_NOT_FOUND_CODE = "job_not_found";
 
     private final JobRepository jobRepository;
     private final CompanyRepository companyRepository;
     private final SkillRepository skillRepository;
-    private final CategoryRepository categoryRepository;
+    private final CategoryClassificationService categoryClassificationService;
     private final JobSourceRepository jobSourceRepository;
     private final JobSourceMappingRepository jobSourceMappingRepository;
-
-    public JobServiceImpl(JobRepository jobRepository,
-                          CompanyRepository companyRepository,
-                          SkillRepository skillRepository,
-                          CategoryRepository categoryRepository,
-                          JobSourceRepository jobSourceRepository,
-                          JobSourceMappingRepository jobSourceMappingRepository) {
-        super(jobRepository);
-        this.jobRepository = jobRepository;
-        this.companyRepository = companyRepository;
-        this.skillRepository = skillRepository;
-        this.categoryRepository = categoryRepository;
-        this.jobSourceRepository = jobSourceRepository;
-        this.jobSourceMappingRepository = jobSourceMappingRepository;
-    }
+    private final LocationMappingService locationMappingService;
+    private final JobLocationRepository jobLocationRepository;
 
     @Override
     @Transactional
@@ -103,30 +105,23 @@ public class JobServiceImpl extends BaseServiceImpl<Job> implements JobService {
         }
 
         Set<Category> categories = new HashSet<>();
-        if (message.getIndustry() != null && !message.getIndustry().trim().isEmpty()) {
-            String[] industryArray = message.getIndustry().split(",");
-            for (String categoryName : industryArray) {
-                if (categoryName != null && !categoryName.trim().isEmpty()) {
-                    String finalCategoryName = categoryName.trim();
-                    Category category = categoryRepository.findByNameIgnoreCase(finalCategoryName)
-                            .orElseGet(() -> {
-                                Category newCategory = new Category();
-                                newCategory.setName(finalCategoryName);
-                                return categoryRepository.save(newCategory);
-                            });
-                    categories.add(category);
-                }
-            }
-        }
+        categoryClassificationService.classifyDeepestCategory(message).ifPresent(categories::add);
 
-        List<String> locations = new ArrayList<>();
+        List<String> rawLocations = new ArrayList<>();
         if (message.getLocation() != null && !message.getLocation().trim().isEmpty()) {
             String[] locationArray = message.getLocation().split("\\|");
             for (String locationName : locationArray) {
                 if (locationName != null && !locationName.trim().isEmpty()) {
-                    locations.add(locationName.trim());
+                    rawLocations.add(locationName.trim());
                 }
             }
+        }
+        List<LocationMappingService.MappedLocation> mappedLocations = new ArrayList<>();
+        List<String> locations = new ArrayList<>();
+        for (String rawLocation : rawLocations) {
+            LocationMappingService.MappedLocation mapped = locationMappingService.map(rawLocation);
+            mappedLocations.add(mapped);
+            locations.add(mapped.display());
         }
 
         Job job = new Job();
@@ -154,6 +149,15 @@ public class JobServiceImpl extends BaseServiceImpl<Job> implements JobService {
         job.setCategories(categories);
 
         job = jobRepository.save(job);
+        for (int i = 0; i < mappedLocations.size(); i++) {
+            LocationMappingService.MappedLocation mapped = mappedLocations.get(i);
+            JobLocation jobLocation = new JobLocation();
+            jobLocation.setJob(job);
+            jobLocation.setRawLocation(rawLocations.get(i));
+            jobLocation.setProvince(mapped.province());
+            jobLocation.setWard(mapped.ward());
+            jobLocationRepository.save(jobLocation);
+        }
 
         if (jobSource != null) {
             JobSourceMapping mapping = new JobSourceMapping();
@@ -182,5 +186,69 @@ public class JobServiceImpl extends BaseServiceImpl<Job> implements JobService {
 
         PageResponse<JobSummaryResponse> pageResponse = PageResponse.of(jobs, Math.toIntExact(data.getTotalElements()));
         return ResponseGeneral.ofSuccess( "success", pageResponse);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public ResponseGeneral<JobDetailResponse> getJobDetail(UUID jobId) {
+        log.info("[getJobDetail] - start get job detail with id = {}", jobId);
+        Job job = jobRepository.findDetailById(jobId)
+                .orElseThrow(() -> new NotFoundException(JOB_NOT_FOUND_CODE));
+        return ResponseGeneral.ofSuccess("success", toJobDetailResponse(job));
+    }
+
+    private JobDetailResponse toJobDetailResponse(Job job) {
+        Company company = job.getCompany();
+        CompanyResponse companyResponse = company == null
+                ? null
+                : new CompanyResponse(company.getId(), company.getName(), company.getLogoUrl());
+
+        List<SkillResponse> skills = job.getSkills().stream()
+                .sorted(Comparator.comparing(Skill::getName, String.CASE_INSENSITIVE_ORDER))
+                .map(skill -> new SkillResponse(skill.getId(), skill.getName()))
+                .toList();
+        List<CategoryResponse> categories = job.getCategories().stream()
+                .sorted(Comparator.comparing(Category::getName, String.CASE_INSENSITIVE_ORDER))
+                .map(this::toCategoryTree)
+                .toList();
+        List<JobSourceResponse> jobSources = job.getJobSourceMappings().stream()
+                .sorted(Comparator.comparing(
+                        JobSourceMapping::getCrawledAt,
+                        Comparator.nullsLast(Comparator.naturalOrder())
+                ))
+                .map(mapping -> new JobSourceResponse(
+                        mapping.getSource().getId(),
+                        mapping.getSource().getDomain(),
+                        mapping.getJobUrl()
+                ))
+                .toList();
+
+        return new JobDetailResponse(
+                job.getId(),
+                companyResponse,
+                job.getTitle(),
+                job.getDescription(),
+                job.getExperienceMonths(),
+                job.getEmploymentType(),
+                job.getPostedDate(),
+                job.getExpiredDate(),
+                job.getMinSalary(),
+                job.getMaxSalary(),
+                job.getCurrency(),
+                job.getSalaryPeriod(),
+                job.getLocation(),
+                job.getBenefits(),
+                skills,
+                categories,
+                jobSources
+        );
+    }
+
+    private CategoryResponse toCategoryTree(Category category) {
+        CategoryResponse node = new CategoryResponse(category.getId(), category.getName(), category.getLevel(), List.of());
+        for (Category parent = category.getParent(); parent != null; parent = parent.getParent()) {
+            node = new CategoryResponse(parent.getId(), parent.getName(), parent.getLevel(), List.of(node));
+        }
+        return node;
     }
 }

@@ -27,6 +27,8 @@ application-local.yml
 
 firebase-service-account.json
 
+category_embeddings.json
+
 docs/
 CLAUDE.md
 .claude/

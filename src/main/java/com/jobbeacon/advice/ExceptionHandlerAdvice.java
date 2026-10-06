@@ -18,6 +18,7 @@ import org.springframework.context.MessageSource;
 import org.springframework.context.support.DefaultMessageSourceResolvable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -77,6 +78,21 @@ public class ExceptionHandlerAdvice {
     return ResponseEntity
         .status(HttpStatus.BAD_REQUEST)
         .body(getError(HttpStatus.BAD_REQUEST.value(), errorMessage, language));
+  }
+
+  @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+  public ResponseEntity<ResponseGeneral<Error>> handleTypeMismatchException(
+      MethodArgumentTypeMismatchException exception,
+      WebRequest webRequest
+  ) {
+    log.error("(handleTypeMismatchException) {}: {}", exception.getName(), exception.getValue());
+    return ResponseEntity
+        .status(HttpStatus.BAD_REQUEST)
+        .body(getError(
+            HttpStatus.BAD_REQUEST.value(),
+            "com.jobbeacon.exception.base.BadRequestException",
+            resolveLanguage(webRequest)
+        ));
   }
 
   @ExceptionHandler(Exception.class)
