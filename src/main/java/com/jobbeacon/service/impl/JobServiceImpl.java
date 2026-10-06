@@ -23,10 +23,10 @@ import com.jobbeacon.repository.JobLocationRepository;
 import com.jobbeacon.repository.JobRepository;
 import com.jobbeacon.repository.JobSourceMappingRepository;
 import com.jobbeacon.repository.JobSourceRepository;
-import com.jobbeacon.repository.SkillRepository;
 import com.jobbeacon.service.CategoryClassificationService;
 import com.jobbeacon.service.JobService;
 import com.jobbeacon.service.LocationMappingService;
+import com.jobbeacon.service.SkillResolutionService;
 import com.jobbeacon.service.base.BaseServiceImpl;
 import com.jobbeacon.utils.PageUtils;
 import com.jobbeacon.utils.UrlUtils;
@@ -54,7 +54,7 @@ public class JobServiceImpl implements JobService {
 
     private final JobRepository jobRepository;
     private final CompanyRepository companyRepository;
-    private final SkillRepository skillRepository;
+    private final SkillResolutionService skillResolutionService;
     private final CategoryClassificationService categoryClassificationService;
     private final JobSourceRepository jobSourceRepository;
     private final JobSourceMappingRepository jobSourceMappingRepository;
@@ -88,21 +88,7 @@ public class JobServiceImpl implements JobService {
                     });
         }
 
-        Set<Skill> skills = new HashSet<>();
-        if (message.getSkills() != null) {
-            for (String skillName : message.getSkills()) {
-                if (skillName != null && !skillName.trim().isEmpty()) {
-                    String finalSkillName = skillName.trim();
-                    Skill skill = skillRepository.findByNameIgnoreCase(finalSkillName)
-                            .orElseGet(() -> {
-                                Skill newSkill = new Skill();
-                                newSkill.setName(finalSkillName);
-                                return skillRepository.save(newSkill);
-                            });
-                    skills.add(skill);
-                }
-            }
-        }
+        Set<Skill> skills = skillResolutionService.resolveSkills(message.getSkills());
 
         Set<Category> categories = new HashSet<>();
         categoryClassificationService.classifyDeepestCategory(message).ifPresent(categories::add);
