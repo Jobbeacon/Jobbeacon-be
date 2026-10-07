@@ -18,6 +18,7 @@ import com.jobbeacon.entity.JobSource;
 import com.jobbeacon.entity.JobSourceMapping;
 import com.jobbeacon.entity.Skill;
 import com.jobbeacon.exception.base.NotFoundException;
+import com.jobbeacon.repository.CategoryRepository;
 import com.jobbeacon.repository.CompanyRepository;
 import com.jobbeacon.repository.JobLocationRepository;
 import com.jobbeacon.repository.JobElasticsearchRepository;
@@ -35,9 +36,11 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.ZoneId;
-import java.util.Comparator;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Comparator;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -58,6 +61,7 @@ public class JobServiceImpl implements JobService {
     private final JobLocationRepository jobLocationRepository;
     private final JobSearchOutboxService jobSearchOutboxService;
     private final JobElasticsearchRepository jobElasticsearchRepository;
+    private final CategoryRepository categoryRepository;
 
     @Override
     @Transactional
@@ -191,7 +195,40 @@ public class JobServiceImpl implements JobService {
                 req.getSources(),
                 req.getSortBy()
         );
+        req.setCategories(expandCategoryFilter(req.getCategories()));
         return ResponseGeneral.ofSuccess("success", jobElasticsearchRepository.search(req));
+    }
+
+    /**
+     * A chosen category also matches jobs tagged with any descendant. The stored
+     * category is often the deepest node, while the filter can name a parent.
+     */
+    private String expandCategoryFilter(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return raw;
+        }
+        List<String> selected = Arrays.stream(raw.split(","))
+                .map(String::trim)
+                .filter(name -> !name.isEmpty())
+                .toList();
+        if (selected.isEmpty()) {
+            return raw;
+        }
+        Set<String> names = new LinkedHashSet<>(selected);
+        for (Object[] row : categoryRepository.findAllForTree()) {
+            String name = (String) row[1];
+            String path = (String) row[4];
+            if (name == null || path == null) {
+                continue;
+            }
+            for (String chosen : selected) {
+                if (path.equals(chosen) || path.startsWith(chosen + " > ")) {
+                    names.add(name);
+                    break;
+                }
+            }
+        }
+        return String.join(",", names);
     }
 
     @Override

@@ -94,10 +94,17 @@ public class JobElasticsearchRepository {
         if (keyword.isEmpty()) {
             bool.must(must -> must.matchAll(match -> match));
         } else {
-            bool.must(must -> must.multiMatch(match -> match
-                    .query(keyword)
-                    .fields("title^3", "company_name^2", "skills.name^2", "description", "locations")
-                    .operator(Operator.And)));
+            bool.must(must -> must.multiMatch(match -> {
+                var builder = match.query(keyword)
+                        .fields("title^3", "company_name^2", "skills.name^2", "description", "locations");
+                // "kế toán" must stay together. Separate tokens match "thiết kế" plus "toàn thời gian".
+                if (keyword.indexOf(' ') >= 0) {
+                    builder.type(TextQueryType.Phrase);
+                } else {
+                    builder.operator(Operator.And);
+                }
+                return builder;
+            }));
         }
 
         List<String> places = new ArrayList<>(split(request.getLocations()));
@@ -120,11 +127,12 @@ public class JobElasticsearchRepository {
         bool.filter(filter -> filter.bool(inner -> {
             inner.minimumShouldMatch("1");
             for (String place : places) {
-                inner.should(should -> should.multiMatch(match -> match
-                        .query(place)
-                        .fields("locations", "province_names")
-                        .type(TextQueryType.CrossFields)
-                        .operator(Operator.And)));
+                inner.should(should -> should.bool(either -> {
+                    either.minimumShouldMatch("1");
+                    either.should(s -> s.matchPhrase(phrase -> phrase.field("locations").query(place)));
+                    either.should(s -> s.matchPhrase(phrase -> phrase.field("province_names").query(place)));
+                    return either;
+                }));
             }
             return inner;
         }));
@@ -137,10 +145,9 @@ public class JobElasticsearchRepository {
         bool.filter(filter -> filter.bool(inner -> {
             inner.minimumShouldMatch("1");
             for (String value : values) {
-                inner.should(should -> should.match(match -> match
-                        .field(field)
-                        .query(value)
-                        .operator(Operator.And)));
+                // Phrase keeps "Kế toán" together and avoids one match query per token,
+                // which overflows Elasticsearch when a parent category expands to many names.
+                inner.should(should -> should.matchPhrase(phrase -> phrase.field(field).query(value)));
             }
             return inner;
         }));
