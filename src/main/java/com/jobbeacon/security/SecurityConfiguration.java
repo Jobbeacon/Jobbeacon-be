@@ -42,6 +42,7 @@ public class SecurityConfiguration {
             .requestMatchers("/actuator/health", "/actuator/info").permitAll()
             .requestMatchers("/api/v1/health").permitAll()
             .requestMatchers(HttpMethod.GET, "/api/v1/jobs", "/api/v1/jobs/**").permitAll()
+            .requestMatchers(HttpMethod.GET, "/api/v1/companies", "/api/v1/companies/**").permitAll()
 
             .anyRequest().authenticated());
 
