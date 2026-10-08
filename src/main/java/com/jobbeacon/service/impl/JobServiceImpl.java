@@ -18,29 +18,29 @@ import com.jobbeacon.entity.JobSource;
 import com.jobbeacon.entity.JobSourceMapping;
 import com.jobbeacon.entity.Skill;
 import com.jobbeacon.exception.base.NotFoundException;
+import com.jobbeacon.repository.CategoryRepository;
 import com.jobbeacon.repository.CompanyRepository;
 import com.jobbeacon.repository.JobLocationRepository;
+import com.jobbeacon.repository.JobElasticsearchRepository;
 import com.jobbeacon.repository.JobRepository;
-import com.jobbeacon.repository.JobSourceMappingRepository;
 import com.jobbeacon.repository.JobSourceRepository;
+import com.jobbeacon.search.JobSearchOutboxService;
 import com.jobbeacon.service.CategoryClassificationService;
 import com.jobbeacon.service.JobService;
 import com.jobbeacon.service.LocationMappingService;
 import com.jobbeacon.service.SkillResolutionService;
-import com.jobbeacon.service.base.BaseServiceImpl;
-import com.jobbeacon.utils.PageUtils;
 import com.jobbeacon.utils.UrlUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.ZoneId;
-import java.util.Comparator;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Comparator;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -57,9 +57,11 @@ public class JobServiceImpl implements JobService {
     private final SkillResolutionService skillResolutionService;
     private final CategoryClassificationService categoryClassificationService;
     private final JobSourceRepository jobSourceRepository;
-    private final JobSourceMappingRepository jobSourceMappingRepository;
     private final LocationMappingService locationMappingService;
     private final JobLocationRepository jobLocationRepository;
+    private final JobSearchOutboxService jobSearchOutboxService;
+    private final JobElasticsearchRepository jobElasticsearchRepository;
+    private final CategoryRepository categoryRepository;
 
     @Override
     @Transactional
@@ -135,6 +137,7 @@ public class JobServiceImpl implements JobService {
         job.setCategories(categories);
 
         job = jobRepository.save(job);
+        List<JobLocation> jobLocations = new ArrayList<>();
         for (int i = 0; i < mappedLocations.size(); i++) {
             LocationMappingService.MappedLocation mapped = mappedLocations.get(i);
             JobLocation jobLocation = new JobLocation();
@@ -142,36 +145,76 @@ public class JobServiceImpl implements JobService {
             jobLocation.setRawLocation(rawLocations.get(i));
             jobLocation.setProvince(mapped.province());
             jobLocation.setWard(mapped.ward());
-            jobLocationRepository.save(jobLocation);
+            jobLocations.add(jobLocationRepository.save(jobLocation));
         }
 
         if (jobSource != null) {
             JobSourceMapping mapping = new JobSourceMapping();
-            JobSourceMapping.JobSourceMappingId mappingId = new JobSourceMapping.JobSourceMappingId();
-            mappingId.setJobId(job.getId());
-            mappingId.setSourceId(jobSource.getId());
-
-            mapping.setId(mappingId);
             mapping.setJob(job);
             mapping.setSource(jobSource);
             mapping.setJobUrl(message.getUrl());
             if (message.getCrawledAt() != null) {
                 mapping.setCrawledAt(message.getCrawledAt().atZone(ZoneId.of("Asia/Ho_Chi_Minh")).toInstant());
             }
-
-            jobSourceMappingRepository.save(mapping);
+            // Cascade from Job persists this row. Saving it here as well calls merge()
+            // because the embedded id is already non-null, then the collection flush
+            // persists a second instance with the same id.
+            job.getJobSourceMappings().add(mapping);
         }
+        jobSearchOutboxService.created(job, jobLocations);
     }
 
     @Override
     public ResponseGeneral<PageResponse<JobSummaryResponse>> searchJobs(JobSearchRequest req) {
-        log.info("[searchJobs] - start search jobs with param: keyword = {}", req.getKeyword());
-        Pageable pageable = PageUtils.buildPageable(req);
-        Page<JobSummaryResponse> data = jobRepository.searchJobs(req.getKeyword(), pageable);
-        List<JobSummaryResponse> jobs = new ArrayList<>(data.getContent());
+        log.info(
+                "[searchJobs] keyword={} location={} locations={} categories={} skills={} salary={}-{} experience={} employment={} postedWithin={} sources={} sort={}",
+                req.getKeyword(),
+                req.getLocation(),
+                req.getLocations(),
+                req.getCategories(),
+                req.getSkills(),
+                req.getMinSalary(),
+                req.getMaxSalary(),
+                req.getExperience(),
+                req.getEmploymentTypes(),
+                req.getPostedWithin(),
+                req.getSources(),
+                req.getSortBy()
+        );
+        req.setCategories(expandCategoryFilter(req.getCategories()));
+        return ResponseGeneral.ofSuccess("success", jobElasticsearchRepository.search(req));
+    }
 
-        PageResponse<JobSummaryResponse> pageResponse = PageResponse.of(jobs, Math.toIntExact(data.getTotalElements()));
-        return ResponseGeneral.ofSuccess( "success", pageResponse);
+    /**
+     * A chosen category also matches jobs tagged with any descendant. The stored
+     * category is often the deepest node, while the filter can name a parent.
+     */
+    private String expandCategoryFilter(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return raw;
+        }
+        List<String> selected = Arrays.stream(raw.split(","))
+                .map(String::trim)
+                .filter(name -> !name.isEmpty())
+                .toList();
+        if (selected.isEmpty()) {
+            return raw;
+        }
+        Set<String> names = new LinkedHashSet<>(selected);
+        for (Object[] row : categoryRepository.findAllForTree()) {
+            String name = (String) row[1];
+            String path = (String) row[4];
+            if (name == null || path == null) {
+                continue;
+            }
+            for (String chosen : selected) {
+                if (path.equals(chosen) || path.startsWith(chosen + " > ")) {
+                    names.add(name);
+                    break;
+                }
+            }
+        }
+        return String.join(",", names);
     }
 
     @Override

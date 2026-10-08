@@ -1,5 +1,6 @@
 package com.jobbeacon.configuration;
 
+import com.jobbeacon.search.ElasticsearchProperties;
 import com.jobbeacon.service.base.MessageService;
 import com.jobbeacon.service.base.MessageServiceImpl;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -8,7 +9,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 @Configuration
-@EnableConfigurationProperties(GeocodeProperties.class)
+@EnableConfigurationProperties({GeocodeProperties.class, ElasticsearchProperties.class})
 public class ServiceConfiguration {
 
   @Bean
