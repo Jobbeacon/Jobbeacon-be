@@ -40,4 +40,17 @@ public interface JobRepository extends BaseRepository<Job> {
         """
     )
     Optional<Job> findDetailById(@Param("jobId") UUID jobId);
+    
+    @Query(
+        """
+            select new com.jobbeacon.dto.response.JobSummaryResponse(
+                j.id, j.title, c.name, j.minSalary, j.maxSalary, j.location, j.currency, c.logoUrl, j.postedDate
+            )
+            from Job j
+            left join j.company c
+            where c.id = :companyId and (j.expiredDate is null or j.expiredDate > CURRENT_TIMESTAMP)
+            order by j.postedDate desc
+        """
+    )
+    Page<JobSummaryResponse> findJobsByCompanyId(@Param("companyId") UUID companyId, Pageable pageable);
 }

@@ -1,7 +1,9 @@
 package com.jobbeacon.service.impl;
 
 import com.jobbeacon.dto.request.CompanySearchRequest;
+import com.jobbeacon.dto.request.PageRequestDto;
 import com.jobbeacon.dto.response.CompanyDetailResponse;
+import com.jobbeacon.dto.response.JobSummaryResponse;
 import com.jobbeacon.dto.response.PageResponse;
 import com.jobbeacon.dto.response.ResponseGeneral;
 import com.jobbeacon.repository.CompanyRepository;
@@ -34,6 +36,7 @@ public class CompanyServiceImpl implements CompanyService {
     private final CompanyRepository companyRepository;
     private final JobLocationRepository jobLocationRepository;
     private final JobSourceMappingRepository jobSourceMappingRepository;
+    private final com.jobbeacon.repository.JobRepository jobRepository;
 
     @Override
     @Transactional(readOnly = true)
@@ -95,5 +98,19 @@ public class CompanyServiceImpl implements CompanyService {
         );
         
         return ResponseGeneral.ofSuccess("success", response);
+    }
+    
+    @Override
+    @Transactional(readOnly = true)
+    public ResponseGeneral<PageResponse<JobSummaryResponse>> getJobsByCompanyId(UUID id, PageRequestDto pageRequestDto) {
+        log.info("[getJobsByCompanyId] - start get jobs by company id: {}", id);
+        
+        Pageable pageable = PageUtils.buildPageable(pageRequestDto);
+        Page<JobSummaryResponse> data = jobRepository.findJobsByCompanyId(id, pageable);
+        
+        PageResponse<JobSummaryResponse> pageResponse = PageResponse.of(
+            data.getContent(), Math.toIntExact(data.getTotalElements()));
+            
+        return ResponseGeneral.ofSuccess("success", pageResponse);
     }
 }
