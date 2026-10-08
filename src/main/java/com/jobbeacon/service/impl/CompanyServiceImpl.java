@@ -1,7 +1,7 @@
 package com.jobbeacon.service.impl;
 
 import com.jobbeacon.dto.request.CompanySearchRequest;
-import com.jobbeacon.dto.response.CompanySummaryResponse;
+import com.jobbeacon.dto.response.CompanyDetailResponse;
 import com.jobbeacon.dto.response.PageResponse;
 import com.jobbeacon.dto.response.ResponseGeneral;
 import com.jobbeacon.repository.CompanyRepository;
@@ -37,7 +37,7 @@ public class CompanyServiceImpl implements CompanyService {
 
     @Override
     @Transactional(readOnly = true)
-    public ResponseGeneral<PageResponse<CompanySummaryResponse>> searchCompanies(CompanySearchRequest req) {
+    public ResponseGeneral<PageResponse<CompanyDetailResponse>> searchCompanies(CompanySearchRequest req) {
         log.info("[searchCompanies] - start search companies with param: keyword = {}", req.getKeyword());
 
         req.setSortBy(null);
@@ -54,8 +54,8 @@ public class CompanyServiceImpl implements CompanyService {
                 Collectors.mapping(CompanySource::value, Collectors.toList())
         ));
 
-        List<CompanySummaryResponse> companies = data.getContent().stream()
-                .map(company -> new CompanySummaryResponse(
+        List<CompanyDetailResponse> companies = data.getContent().stream()
+                .map(company -> new CompanyDetailResponse(
                         company.id(),
                         company.name(),
                         company.logoUrl(),
@@ -65,7 +65,35 @@ public class CompanyServiceImpl implements CompanyService {
                 ))
                 .toList();
 
-        PageResponse<CompanySummaryResponse> pageResponse = PageResponse.of(companies, Math.toIntExact(data.getTotalElements()));
+        PageResponse<CompanyDetailResponse> pageResponse = PageResponse.of(companies, Math.toIntExact(data.getTotalElements()));
         return ResponseGeneral.ofSuccess("success", pageResponse);
+    }
+    
+    @Override
+    @Transactional(readOnly = true)
+    public ResponseGeneral<CompanyDetailResponse> getCompanyById(UUID id) {
+        log.info("[getCompanyById] - start get company by id: {}", id);
+        
+        CompanyJobCount company = companyRepository.findCompanyJobCountById(id)
+                .orElseThrow(() -> new com.jobbeacon.exception.base.NotFoundException("company_not_found"));
+                
+        List<String> locations = jobLocationRepository.getProvincesNameByCompanyIds(List.of(id)).stream()
+                .map(CompanyProvince::value)
+                .toList();
+                
+        List<String> sources = jobSourceMappingRepository.getSourcesByCompanyIds(List.of(id)).stream()
+                .map(CompanySource::value)
+                .toList();
+                
+        CompanyDetailResponse response = new CompanyDetailResponse(
+                company.id(),
+                company.name(),
+                company.logoUrl(),
+                company.openJobsCount(),
+                locations,
+                sources
+        );
+        
+        return ResponseGeneral.ofSuccess("success", response);
     }
 }

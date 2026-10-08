@@ -30,4 +30,15 @@ public interface CompanyRepository extends BaseRepository<Company> {
         """
     )
     Page<CompanyJobCount> searchCompanies(@Param("keyword") String keyword, Pageable pageable);
+    
+    @Query(
+            value = """
+            select new com.jobbeacon.repository.projection.CompanyJobCount(c.id, c.name, c.logoUrl, count(j.id))
+            from Company c
+            left join Job j on j.company = c and (j.expiredDate is null or j.expiredDate > CURRENT_TIMESTAMP)
+            where c.id = :id
+            group by c.id, c.name, c.logoUrl
+        """
+    )
+    Optional<CompanyJobCount> findCompanyJobCountById(@Param("id") java.util.UUID id);
 }
