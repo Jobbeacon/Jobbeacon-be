@@ -1,5 +1,6 @@
 package com.jobbeacon.security;
 
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
@@ -47,6 +48,7 @@ public class SecurityConfiguration {
             .requestMatchers(HttpMethod.GET, "/api/v1/jobs", "/api/v1/jobs/**").permitAll()
             .requestMatchers(HttpMethod.GET, "/api/v1/locations/**").permitAll()
             .requestMatchers(HttpMethod.GET, "/api/v1/categories").permitAll()
+            .requestMatchers(HttpMethod.GET, "/api/v1/companies", "/api/v1/companies/**").permitAll()
 
             .anyRequest().authenticated());
 

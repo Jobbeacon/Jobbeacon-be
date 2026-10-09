@@ -49,9 +49,9 @@ app:
     api-key: ${GEMINI_API_KEY:}
     embedding-model: ${GEMINI_EMBEDDING_MODEL:gemini-embedding-2}
     embedding-dimension: ${GEMINI_EMBEDDING_DIMENSION:1536}
-    chat-model: ${GEMINI_CHAT_MODEL:gemini-2.5-flash}
+    chat-model: ${GEMINI_CHAT_MODEL:gemini-3.1-flash-lite}
     retry:
-      max-retries: ${GEMINI_RETRY_MAX_RETRIES:3}
+      max-retries: ${GEMINI_RETRY_MAX_RETRIES:5}
       initial-delay-ms: ${GEMINI_RETRY_INITIAL_DELAY_MS:2000}
       multiplier: ${GEMINI_RETRY_MULTIPLIER:2.0}
   category-classification:
