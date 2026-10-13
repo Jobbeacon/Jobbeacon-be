@@ -16,6 +16,9 @@ public interface CategoryRepository extends BaseRepository<Category> {
     Optional<Category> findByNameIgnoreCase(String name);
     long countByEmbeddingIsNotNull();
 
+    @Query("select c.id, c.name, c.parent.id, c.level, c.path from Category c")
+    List<Object[]> findAllForTree();
+
     @Query("""
             select new com.jobbeacon.repository.projection.CategoryDistance(c, cosine_distance(c.embedding, :embedding))
             from Category c

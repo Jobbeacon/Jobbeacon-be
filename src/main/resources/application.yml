@@ -42,7 +42,7 @@ app:
     base-url: https://nominatim.openstreetmap.org/search
     user-agent: jobbeacon-be/1.0 (address normalization)
     min-interval: 1s
-    timeout: 5s
+    timeout: 15s
     positive-ttl: 180d
     negative-ttl: 7d
   rabbitmq:
@@ -54,7 +54,11 @@ app:
     api-key: ${GEMINI_API_KEY:}
     embedding-model: ${GEMINI_EMBEDDING_MODEL:gemini-embedding-2}
     embedding-dimension: ${GEMINI_EMBEDDING_DIMENSION:1536}
-    generation-model: ${GEMINI_GENERATION_MODEL:gemini-2.5-flash}
+    chat-model: ${GEMINI_CHAT_MODEL:gemini-3.1-flash-lite}
+    retry:
+      max-retries: ${GEMINI_RETRY_MAX_RETRIES:5}
+      initial-delay-ms: ${GEMINI_RETRY_INITIAL_DELAY_MS:2000}
+      multiplier: ${GEMINI_RETRY_MULTIPLIER:2.0}
   cv:
     max-file-size: ${CV_MAX_FILE_SIZE:10MB}
     max-pages: ${CV_MAX_PAGES:20}
@@ -72,6 +76,14 @@ app:
   category-classification:
     min-score: ${CATEGORY_CLASSIFICATION_MIN_SCORE:0.72}
     min-margin: ${CATEGORY_CLASSIFICATION_MIN_MARGIN:0.03}
+  skill-resolution:
+    min-similarity: ${SKILL_RESOLUTION_MIN_SIMILARITY:0.7}
+    top-k: ${SKILL_RESOLUTION_TOP_K:10}
+  elasticsearch:
+    url: ${ELASTICSEARCH_URL:http://localhost:9200}
+    index: ${ELASTICSEARCH_JOB_INDEX:jobs}
+  search:
+    backfill-on-startup: ${SEARCH_BACKFILL_ON_STARTUP:false}
 
 server:
   port: ${PORT:8080}

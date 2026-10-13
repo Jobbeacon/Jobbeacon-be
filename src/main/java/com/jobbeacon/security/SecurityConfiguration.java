@@ -2,6 +2,7 @@ package com.jobbeacon.security;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -24,10 +25,13 @@ import java.util.List;
 @EnableWebSecurity
 @EnableMethodSecurity
 @Slf4j
-@RequiredArgsConstructor
 public class SecurityConfiguration {
 
-  private final FirebaseTokenFilter firebaseTokenFilter;
+  private final ObjectProvider<FirebaseTokenFilter> firebaseTokenFilter;
+
+  public SecurityConfiguration(ObjectProvider<FirebaseTokenFilter> firebaseTokenFilter) {
+    this.firebaseTokenFilter = firebaseTokenFilter;
+  }
 
   @Value("${app.cors.allowed-origins:http://localhost:5173}")
   private String allowedOrigins;
@@ -42,10 +46,16 @@ public class SecurityConfiguration {
             .requestMatchers("/actuator/health", "/actuator/info").permitAll()
             .requestMatchers("/api/v1/health").permitAll()
             .requestMatchers(HttpMethod.GET, "/api/v1/jobs", "/api/v1/jobs/**").permitAll()
+            .requestMatchers(HttpMethod.GET, "/api/v1/locations/**").permitAll()
+            .requestMatchers(HttpMethod.GET, "/api/v1/categories").permitAll()
+            .requestMatchers(HttpMethod.GET, "/api/v1/companies", "/api/v1/companies/**").permitAll()
 
             .anyRequest().authenticated());
 
-    http.addFilterBefore(firebaseTokenFilter, UsernamePasswordAuthenticationFilter.class);
+    FirebaseTokenFilter filter = firebaseTokenFilter.getIfAvailable();
+    if (filter != null) {
+      http.addFilterBefore(filter, UsernamePasswordAuthenticationFilter.class);
+    }
 
     return http.build();
   }

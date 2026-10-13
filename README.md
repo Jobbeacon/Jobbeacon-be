@@ -96,3 +96,17 @@ docker run -p 8080:8080 --env-file .env jobbeacon-be
 ```
 
 Mặc định app chạy ở `http://localhost:8080`, API docs (Swagger/OpenAPI) tại `/swagger-ui.html`.
+
+## Tìm kiếm job
+
+Danh sách job đọc Elasticsearch. Chi tiết job vẫn đọc Postgres. Phần đồng bộ index nằm ở service riêng [`../Jobbeacon-sync`](../Jobbeacon-sync).
+
+Postgres dùng cho CDC là service `jobbeacon-db` trong `infras-deployment`, cổng host `5433`, `wal_level=logical`. Container Postgres khác đang chiếm cổng `5432` không dùng cho luồng này.
+
+```bash
+DB_URL=jdbc:postgresql://localhost:5433/job_platform \
+ELASTICSEARCH_URL=http://localhost:9200 \
+mvn spring-boot:run
+```
+
+`SEARCH_BACKFILL_ON_STARTUP=true` ghi một hàng outbox cho mỗi job hiện có. CDC kéo các hàng đó lên index `jobs`.

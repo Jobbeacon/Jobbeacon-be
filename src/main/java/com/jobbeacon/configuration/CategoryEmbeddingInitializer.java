@@ -51,6 +51,10 @@ public class CategoryEmbeddingInitializer {
 
             ClassPathResource resource =
                     new ClassPathResource("data/category_embeddings.json");
+            if (!resource.exists()) {
+                log.warn("Skip category embeddings: data/category_embeddings.json is not on the classpath");
+                return;
+            }
 
             try (InputStream inputStream = resource.getInputStream()) {
                 embeddingData = objectMapper.readValue(

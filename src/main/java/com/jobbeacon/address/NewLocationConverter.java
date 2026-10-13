@@ -276,15 +276,37 @@ public class NewLocationConverter {
         }
 
         private String query(String street, int wardIndex, Integer districtIndex) {
-            List<String> pieces = new ArrayList<>();
-            pieces.add(street);
-            pieces.add(parts.get(wardIndex));
-            if (districtIndex != null) {
-                pieces.add(parts.get(districtIndex));
+            String road = street == null ? "" : street.trim();
+            int comma = road.lastIndexOf(',');
+            if (comma >= 0 && comma < road.length() - 1) {
+                road = road.substring(comma + 1).trim();
             }
-            pieces.add(province.name());
-            pieces.add("Vietnam");
+            List<String> pieces = new ArrayList<>();
+            if (!road.isBlank()) {
+                pieces.add(road);
+            }
+            addPlace(pieces, stripPrefix(parts.get(wardIndex)));
+            if (districtIndex != null) {
+                addPlace(pieces, stripPrefix(parts.get(districtIndex)));
+            }
+            String provinceLabel = province.shortName() == null || province.shortName().isBlank()
+                    ? province.name()
+                    : province.shortName();
+            addPlace(pieces, provinceLabel);
             return String.join(", ", pieces);
+        }
+
+        private void addPlace(List<String> pieces, String place) {
+            if (place == null || place.isBlank()) {
+                return;
+            }
+            String folded = fold(place);
+            for (String piece : pieces) {
+                if (fold(piece).equals(folded)) {
+                    return;
+                }
+            }
+            pieces.add(place);
         }
 
         private List<SplitSite> sites(Iterable<String> codes) {
