@@ -25,6 +25,12 @@ spring:
   jackson:
     property-naming-strategy: SNAKE_CASE
 
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+
   rabbitmq:
     host: ${RABBITMQ_HOST:localhost}
     port: ${RABBITMQ_PORT:5672}
@@ -40,6 +46,9 @@ app:
     timeout: 15s
     positive-ttl: 180d
     negative-ttl: 7d
+  chat:
+    session-ttl: ${CHAT_SESSION_TTL:30m}
+    max-history: ${CHAT_MAX_HISTORY:40}
   rabbitmq:
     job-posting:
       queue: job-posting.parsed

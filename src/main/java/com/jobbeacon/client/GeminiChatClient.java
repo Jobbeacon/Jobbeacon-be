@@ -1,15 +1,19 @@
 package com.jobbeacon.client;
 
+import com.google.genai.types.AutomaticFunctionCallingConfig;
 import com.google.genai.types.Content;
 import com.google.genai.types.FinishReason;
 import com.google.genai.types.GenerateContentConfig;
 import com.google.genai.types.GenerateContentResponse;
 import com.google.genai.types.Part;
+import com.google.genai.types.Tool;
 import com.jobbeacon.exception.GeminiEmptyResponseException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
+
+import java.util.List;
 
 @Slf4j
 @Component
@@ -38,6 +42,24 @@ public class GeminiChatClient {
         GenerateContentConfig config = configBuilder.build();
         return retryExecutor.execute("generateContent(" + chatModel + ")",
                 client -> extractText(client.models.generateContent(chatModel, userPrompt, config)));
+    }
+
+    public GenerateContentResponse generateWithTools(String systemPrompt, List<Content> contents, List<Tool> tools) {
+        if (contents == null || contents.isEmpty()) {
+            throw new IllegalArgumentException("Cannot generate content from empty conversation");
+        }
+
+        GenerateContentConfig.Builder configBuilder = GenerateContentConfig.builder()
+                .temperature(0.3f)
+                .tools(tools)
+                .automaticFunctionCalling(AutomaticFunctionCallingConfig.builder().disable(true));
+        if (systemPrompt != null && !systemPrompt.isBlank()) {
+            configBuilder.systemInstruction(Content.fromParts(Part.fromText(systemPrompt)));
+        }
+
+        GenerateContentConfig config = configBuilder.build();
+        return retryExecutor.execute("generateContent(" + chatModel + ", tools)",
+                client -> client.models.generateContent(chatModel, contents, config));
     }
 
     private String extractText(GenerateContentResponse response) {
