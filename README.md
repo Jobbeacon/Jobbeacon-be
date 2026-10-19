@@ -58,7 +58,7 @@ Khi app start lần đầu, Liquibase sẽ tự chạy migration để tạo sch
 Cây category đã được seed sẵn qua Liquibase, nhưng **vector embedding của từng category** không nằm trong git (file JSON ~50MB) — cần tải thủ công:
 
 1. Tải file tại: **https://drive.google.com/file/d/1ZNWiMgbpShkZSqcinJ1LQwRWRtzsW3bv/view?usp=sharing**
-2. Đặt file đã tải vào đúng đường dẫn sau, đổi tên thành `category_embeddings.json` nếu cần:
+2. Đặt file đã tải vào đúng đường dẫn sau, đổi tên thành `src/main/resources/db/changelog/data/category_embeddings.json` nếu cần:
    ```
    src/main/resources/data/category_embeddings.json
    ```

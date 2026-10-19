@@ -25,6 +25,11 @@ spring:
   jackson:
     property-naming-strategy: SNAKE_CASE
 
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 11MB
+
   rabbitmq:
     host: ${RABBITMQ_HOST:localhost}
     port: ${RABBITMQ_PORT:5672}
@@ -54,6 +59,21 @@ app:
       max-retries: ${GEMINI_RETRY_MAX_RETRIES:5}
       initial-delay-ms: ${GEMINI_RETRY_INITIAL_DELAY_MS:2000}
       multiplier: ${GEMINI_RETRY_MULTIPLIER:2.0}
+  cv:
+    max-file-size: ${CV_MAX_FILE_SIZE:10MB}
+    max-pages: ${CV_MAX_PAGES:20}
+    skill-index-ttl: ${CV_SKILL_INDEX_TTL:10m}
+    t-min: ${CV_T_MIN:0.6}
+    e-min: ${CV_E_MIN:0.5}
+    q-high: ${CV_Q_HIGH:0.8}
+    q-low: ${CV_Q_LOW:0.45}
+    ocr-min-chars-per-page: ${CV_OCR_MIN_CHARS_PER_PAGE:100}
+    model-timeout: ${CV_MODEL_TIMEOUT:30s}
+    max-output-tokens: ${CV_MAX_OUTPUT_TOKENS:8192}
+    model-thinking-budget: ${CV_MODEL_THINKING_BUDGET:0}
+    pdf-parse-timeout: ${CV_PDF_PARSE_TIMEOUT:15s}
+    pdf-parse-threads: ${CV_PDF_PARSE_THREADS:4}
+    max-new-skills: ${CV_MAX_NEW_SKILLS:10}
   category-classification:
     min-score: ${CATEGORY_CLASSIFICATION_MIN_SCORE:0.72}
     min-margin: ${CATEGORY_CLASSIFICATION_MIN_MARGIN:0.03}
