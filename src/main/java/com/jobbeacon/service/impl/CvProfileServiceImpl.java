@@ -40,6 +40,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 public class CvProfileServiceImpl implements CvProfileService {
 
   static final String CV_PROFILE_NOT_FOUND = "cv_profile_not_found";
+  static final String CV_PROFILE_SKILL_NOT_FOUND = "cv_profile_skill_not_found";
   static final int EVIDENCE_MAX_LENGTH = 500;
   static final int SAVE_ATTEMPTS = 2;
 
@@ -106,16 +107,8 @@ public class CvProfileServiceImpl implements CvProfileService {
   @Transactional(readOnly = true)
   public CvProfileView getProfile(UUID userId) {
     log.info("(getProfile) userId: {}", userId);
-    CvProfile profile = cvProfileRepository.findByUserId(userId)
-        .orElseThrow(() -> new NotFoundException(CV_PROFILE_NOT_FOUND));
-    List<CvSkillMapping> mappings = cvSkillMappingRepository.findByIdCvProfileId(profile.getId());
-    List<UUID> skillIds = mappings.stream().map(m -> m.getId().getSkillId()).toList();
-    Map<UUID, String> names = skillRepository.findAllById(skillIds).stream()
-        .collect(Collectors.toMap(Skill::getId, s -> Objects.toString(s.getName(), ""), (a, b) -> a));
-    List<SkillEntry> skills = mappings.stream()
-        .map(m -> toEntry(m, names.get(m.getId().getSkillId())))
-        .toList();
-    return new CvProfileView(profile, skills);
+    CvProfile profile = findProfile(userId);
+    return new CvProfileView(profile, loadSkills(profile.getId()));
   }
 
   @Override
@@ -125,6 +118,39 @@ public class CvProfileServiceImpl implements CvProfileService {
     if (cvProfileRepository.deleteByUserId(userId) == 0) {
       throw new NotFoundException(CV_PROFILE_NOT_FOUND);
     }
+  }
+
+  @Override
+  @Transactional(readOnly = true)
+  public CvProfileSkills getSkills(UUID userId) {
+    log.info("(getSkills) userId: {}", userId);
+    CvProfile profile = findProfile(userId);
+    return new CvProfileSkills(profile.getId(), loadSkills(profile.getId()));
+  }
+
+  @Override
+  @Transactional
+  public void deleteSkill(UUID userId, UUID skillId) {
+    log.info("(deleteSkill) userId: {}, skillId: {}", userId, skillId);
+    CvProfile profile = findProfile(userId);
+    if (cvSkillMappingRepository.deleteByCvProfileIdAndSkillId(profile.getId(), skillId) == 0) {
+      throw new NotFoundException(CV_PROFILE_SKILL_NOT_FOUND);
+    }
+  }
+
+  private CvProfile findProfile(UUID userId) {
+    return cvProfileRepository.findByUserId(userId)
+        .orElseThrow(() -> new NotFoundException(CV_PROFILE_NOT_FOUND));
+  }
+
+  private List<SkillEntry> loadSkills(UUID profileId) {
+    List<CvSkillMapping> mappings = cvSkillMappingRepository.findByIdCvProfileId(profileId);
+    List<UUID> skillIds = mappings.stream().map(m -> m.getId().getSkillId()).toList();
+    Map<UUID, String> names = skillRepository.findAllById(skillIds).stream()
+        .collect(Collectors.toMap(Skill::getId, s -> Objects.toString(s.getName(), ""), (a, b) -> a));
+    return mappings.stream()
+        .map(m -> toEntry(m, names.get(m.getId().getSkillId())))
+        .toList();
   }
 
   private CvProfileView upsert(UUID userId, CvParsedPayload payload, String parserModelVersion) {

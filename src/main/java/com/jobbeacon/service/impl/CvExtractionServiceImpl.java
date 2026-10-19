@@ -14,11 +14,13 @@ import com.jobbeacon.cv.PdfText;
 import com.jobbeacon.dto.cv.CvParsedPayload;
 import com.jobbeacon.dto.cv.CvParsedPayload.SkillItem;
 import com.jobbeacon.dto.skill.SkillRef;
+import com.jobbeacon.entity.Skill;
 import com.jobbeacon.exception.CvExtractionException;
 import com.jobbeacon.service.CvExtractionService;
 import com.jobbeacon.service.CvProfileService;
 import com.jobbeacon.service.CvProfileService.CvProfileView;
-import com.jobbeacon.service.SkillLookupService;
+import com.jobbeacon.service.SkillResolutionService;
+import com.jobbeacon.utils.SkillUtils;
 import jakarta.annotation.PreDestroy;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -26,6 +28,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
@@ -45,7 +48,7 @@ import org.springframework.web.multipart.MultipartFile;
 /**
  * Orchestrates the CV extraction pipeline (analysis doc §4, §7.3, §8.1):
  * read PDF (with timeout) → scan detection → deterministic pass → decision tree → model (optional)
- * → post-process → skill lookup → final quality check → save profile (D-007).
+ * → post-process → final quality check → skill resolution → save profile (D-007, D-008).
  *
  * <p>Only the profile write ({@link CvProfileService#saveParsed}) runs in a transaction; PDF parsing
  * and model calls never do. Every failure throws {@link CvExtractionException} and writes nothing.
@@ -66,10 +69,15 @@ import org.springframework.web.multipart.MultipartFile;
  *   <li>{@code keyword_only}: Q ≥ {@code q-high} → deterministic result only, no model call.</li>
  * </ul>
  *
- * <p>The final quality score is recomputed on the final payload with the §7.2 weights
- * (see {@link #finalQuality}); below {@code q-low}, or with no experience/education/skill/contact
- * at all, nothing is saved: {@code cv_insufficient_data}, or the model error when the
- * deterministic fallback was in use.
+ * <p>The final quality score is recomputed on the post-processed payload (candidate skills, before
+ * resolution) with the §7.2 weights (see {@link #finalQuality}); below {@code q-low}, or with no
+ * experience/education/skill/contact at all, nothing is saved: {@code cv_insufficient_data}, or the
+ * model error when the deterministic fallback was in use.
+ *
+ * <p>Only a payload that passed this check has its skills resolved (D-008): gazetteer matches keep
+ * their skill, the others go through {@link SkillResolutionService#resolveSkillMap} (which may create
+ * skills/aliases), at most {@code app.cv.max-new-skills} of them taking the embedding + LLM path.
+ * A resolver failure keeps only the gazetteer skills.
  */
 @Slf4j
 @Service
@@ -91,7 +99,8 @@ public class CvExtractionServiceImpl implements CvExtractionService {
       double qLow,
       int ocrMinCharsPerPage,
       Duration pdfParseTimeout,
-      int pdfParseThreads
+      int pdfParseThreads,
+      int maxNewSkills
   ) {
   }
 
@@ -99,7 +108,7 @@ public class CvExtractionServiceImpl implements CvExtractionService {
   private final DeterministicExtractor deterministicExtractor;
   private final GeminiCvExtractionClient geminiClient;
   private final CvPostProcessor postProcessor;
-  private final SkillLookupService skillLookupService;
+  private final SkillResolutionService skillResolutionService;
   private final CvProfileService cvProfileService;
   private final Settings settings;
   private final ExecutorService pdfExecutor;
@@ -110,7 +119,7 @@ public class CvExtractionServiceImpl implements CvExtractionService {
       DeterministicExtractor deterministicExtractor,
       GeminiCvExtractionClient geminiClient,
       CvPostProcessor postProcessor,
-      SkillLookupService skillLookupService,
+      SkillResolutionService skillResolutionService,
       CvProfileService cvProfileService,
       @Value("${app.cv.t-min:0.6}") double tMin,
       @Value("${app.cv.e-min:0.5}") double eMin,
@@ -118,11 +127,13 @@ public class CvExtractionServiceImpl implements CvExtractionService {
       @Value("${app.cv.q-low:0.45}") double qLow,
       @Value("${app.cv.ocr-min-chars-per-page:100}") int ocrMinCharsPerPage,
       @Value("${app.cv.pdf-parse-timeout:15s}") Duration pdfParseTimeout,
-      @Value("${app.cv.pdf-parse-threads:4}") int pdfParseThreads
+      @Value("${app.cv.pdf-parse-threads:4}") int pdfParseThreads,
+      @Value("${app.cv.max-new-skills:10}") int maxNewSkills
   ) {
-    this(cvPdfReader, deterministicExtractor, geminiClient, postProcessor, skillLookupService,
+    this(cvPdfReader, deterministicExtractor, geminiClient, postProcessor, skillResolutionService,
         cvProfileService,
-        new Settings(tMin, eMin, qHigh, qLow, ocrMinCharsPerPage, pdfParseTimeout, pdfParseThreads));
+        new Settings(tMin, eMin, qHigh, qLow, ocrMinCharsPerPage, pdfParseTimeout, pdfParseThreads,
+            maxNewSkills));
   }
 
   CvExtractionServiceImpl(
@@ -130,7 +141,7 @@ public class CvExtractionServiceImpl implements CvExtractionService {
       DeterministicExtractor deterministicExtractor,
       GeminiCvExtractionClient geminiClient,
       CvPostProcessor postProcessor,
-      SkillLookupService skillLookupService,
+      SkillResolutionService skillResolutionService,
       CvProfileService cvProfileService,
       Settings settings
   ) {
@@ -138,7 +149,7 @@ public class CvExtractionServiceImpl implements CvExtractionService {
     this.deterministicExtractor = deterministicExtractor;
     this.geminiClient = geminiClient;
     this.postProcessor = postProcessor;
-    this.skillLookupService = skillLookupService;
+    this.skillResolutionService = skillResolutionService;
     this.cvProfileService = cvProfileService;
     this.settings = settings;
     this.pdfExecutor = Executors.newFixedThreadPool(Math.max(1, settings.pdfParseThreads()), pdfThreadFactory());
@@ -298,7 +309,8 @@ public class CvExtractionServiceImpl implements CvExtractionService {
   }
 
   /**
-   * Post-process, resolve skills, compute the final quality score and decide success or failure.
+   * Post-process, compute the final quality score, decide success or failure and, on success only,
+   * resolve skills.
    *
    * @param modelError model error when the deterministic result is used as a fallback (D-006)
    */
@@ -312,40 +324,53 @@ public class CvExtractionServiceImpl implements CvExtractionService {
     stats.postMs = elapsedMs(postStart);
     stats.hallucinated = post.hallucinatedSkillCount();
 
-    long lookupStart = System.nanoTime();
-    List<SkillItem> skills = resolveSkills(post.payload().skills(), stats);
-    stats.lookupMs = elapsedMs(lookupStart);
-    CvParsedPayload payload = withSkills(post.payload(), skills);
-
+    CvParsedPayload candidate = post.payload();
     boolean usedModel = model != null;
     String parserVersion = usedModel ? parserVersion(model.model()) : DETERMINISTIC_VERSION;
-    double q = finalQuality(payload, textQuality, det != null && det.layoutComplex());
+    double q = finalQuality(candidate, textQuality, det != null && det.layoutComplex());
     String fallbackCode = modelError == null ? null : modelError.getCode();
-    if (isThin(payload) || q < settings.qLow()) {
+    if (isThin(candidate) || q < settings.qLow()) {
       CvExtractionException failure = modelError != null ? modelError : CvExtractionException.insufficientData();
       return new Outcome(failure, null, q, usedModel, usedOcr, parserVersion, fallbackCode);
     }
-    return new Outcome(null, payload, q, usedModel, usedOcr, parserVersion, fallbackCode);
+
+    long lookupStart = System.nanoTime();
+    List<SkillItem> skills = resolveSkills(candidate.skills(), stats);
+    stats.lookupMs = elapsedMs(lookupStart);
+    return new Outcome(null, withSkills(candidate, skills), q, usedModel, usedOcr, parserVersion, fallbackCode);
   }
 
   // ---------------------------------------------------------------- skills
 
   /**
-   * Keeps skills already resolved by the gazetteer (skillId set), looks the others up by raw name,
-   * drops those not found (never creates skills, D-005) and merges duplicates by skillId.
+   * Keeps skills already resolved by the gazetteer (skillId set), resolves the others by raw name
+   * (fallback skillName) through {@link SkillResolutionService#resolveSkillMap} with the
+   * {@code max-new-skills} cap, drops those left unresolved and merges duplicates by skillId.
+   * A resolver failure is logged and only the gazetteer skills are kept.
    */
   private List<SkillItem> resolveSkills(List<SkillItem> items, Stats stats) {
-    Map<UUID, SkillItem> byId = new LinkedHashMap<>();
-    int total = 0;
-    int dropped = 0;
-    for (SkillItem item : items == null ? List.<SkillItem>of() : items) {
-      if (item == null) {
-        continue;
+    List<SkillItem> candidates = nullSafe(items).stream().filter(Objects::nonNull).toList();
+    List<String> raws = candidates.stream()
+        .filter(item -> item.skillId() == null)
+        .map(CvExtractionServiceImpl::rawName)
+        .filter(CvExtractionServiceImpl::notBlank)
+        .toList();
+    Map<String, Skill> resolvedByKey = Map.of();
+    if (!raws.isEmpty()) {
+      try {
+        resolvedByKey = skillResolutionService.resolveSkillMap(raws, settings.maxNewSkills());
+      } catch (RuntimeException e) {
+        log.warn("(resolveSkills) uploadId: {}, stage: skill_resolve, status: failed, error: {}",
+            stats.uploadId, e.getClass().getSimpleName());
       }
-      total++;
+    }
+
+    Map<UUID, SkillItem> byId = new LinkedHashMap<>();
+    int dropped = 0;
+    for (SkillItem item : candidates) {
       SkillRef ref = item.skillId() != null
           ? new SkillRef(item.skillId(), item.skillName())
-          : skillLookupService.findByName(item.raw()).orElse(null);
+          : toRef(resolvedByKey, rawName(item));
       if (ref == null) {
         dropped++;
         continue;
@@ -356,8 +381,20 @@ public class CvExtractionServiceImpl implements CvExtractionService {
     }
     stats.skillsMatched = byId.size();
     stats.skillsDropped = dropped;
-    stats.skillsMerged = total - dropped - byId.size();
+    stats.skillsMerged = candidates.size() - dropped - byId.size();
     return List.copyOf(byId.values());
+  }
+
+  private static String rawName(SkillItem item) {
+    return notBlank(item.raw()) ? item.raw() : item.skillName();
+  }
+
+  private static SkillRef toRef(Map<String, Skill> resolvedByKey, String raw) {
+    if (!notBlank(raw)) {
+      return null;
+    }
+    Skill skill = resolvedByKey.get(SkillUtils.normalizeSkill(raw));
+    return skill == null ? null : new SkillRef(skill.getId(), skill.getName());
   }
 
   private static SkillItem mergeSkill(SkillItem first, SkillItem other) {

@@ -12,6 +12,7 @@ import org.springframework.web.multipart.MultipartFile;
 public class CvFileValidator {
 
   private static final byte[] PDF_MAGIC = "%PDF-".getBytes(StandardCharsets.US_ASCII);
+  private static final int HEADER_SEARCH_LIMIT = 1024;
 
   private final long maxFileSizeBytes;
   private final int maxPages;
@@ -37,15 +38,30 @@ public class CvFileValidator {
     }
   }
 
+  /**
+   * Accepts the {@code %PDF-} header anywhere in the first 1024 bytes, like Acrobat and PDFBox:
+   * valid files may start with a BOM, whitespace or junk bytes added by exporters.
+   */
   public void validateMagicBytes(byte[] content) {
-    if (content == null || content.length < PDF_MAGIC.length) {
+    if (content == null) {
       throw CvExtractionException.invalidFileType();
     }
-    for (int i = 0; i < PDF_MAGIC.length; i++) {
-      if (content[i] != PDF_MAGIC[i]) {
-        throw CvExtractionException.invalidFileType();
+    int lastStart = Math.min(content.length, HEADER_SEARCH_LIMIT) - PDF_MAGIC.length;
+    for (int start = 0; start <= lastStart; start++) {
+      if (startsWithMagic(content, start)) {
+        return;
       }
     }
+    throw CvExtractionException.invalidFileType();
+  }
+
+  private static boolean startsWithMagic(byte[] content, int start) {
+    for (int i = 0; i < PDF_MAGIC.length; i++) {
+      if (content[start + i] != PDF_MAGIC[i]) {
+        return false;
+      }
+    }
+    return true;
   }
 
   public void validateDocument(PDDocument document) {

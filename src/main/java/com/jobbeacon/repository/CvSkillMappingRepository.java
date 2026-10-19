@@ -20,4 +20,9 @@ public interface CvSkillMappingRepository extends JpaRepository<CvSkillMapping, 
     @Modifying(flushAutomatically = true)
     @Query("delete from CvSkillMapping m where m.id.cvProfileId = :cvProfileId")
     int deleteByCvProfileId(@Param("cvProfileId") UUID cvProfileId);
+
+    @Transactional
+    @Modifying(flushAutomatically = true)
+    @Query("delete from CvSkillMapping m where m.id.cvProfileId = :cvProfileId and m.id.skillId = :skillId")
+    int deleteByCvProfileIdAndSkillId(@Param("cvProfileId") UUID cvProfileId, @Param("skillId") UUID skillId);
 }

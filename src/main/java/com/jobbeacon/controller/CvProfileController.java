@@ -1,6 +1,7 @@
 package com.jobbeacon.controller;
 
 import com.jobbeacon.dto.response.CvProfileResponse;
+import com.jobbeacon.dto.response.CvProfileSkillsResponse;
 import com.jobbeacon.dto.response.ResponseGeneral;
 import com.jobbeacon.entity.User;
 import com.jobbeacon.exception.CvExtractionException;
@@ -11,11 +12,14 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
+
+import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/v1/me/cv-profile")
@@ -46,6 +50,18 @@ public class CvProfileController {
   @DeleteMapping
   public ResponseGeneral<Void> deleteProfile(@CurrentUser User user) {
     cvProfileService.deleteProfile(user.getId());
+    return ResponseGeneral.ofSuccess("success");
+  }
+
+  @GetMapping("/skills")
+  public ResponseGeneral<CvProfileSkillsResponse> getSkills(@CurrentUser User user) {
+    return ResponseGeneral.ofSuccess("success",
+        CvProfileSkillsResponse.from(cvProfileService.getSkills(user.getId())));
+  }
+
+  @DeleteMapping("/skills/{skillId}")
+  public ResponseGeneral<Void> deleteSkill(@CurrentUser User user, @PathVariable UUID skillId) {
+    cvProfileService.deleteSkill(user.getId(), skillId);
     return ResponseGeneral.ofSuccess("success");
   }
 }

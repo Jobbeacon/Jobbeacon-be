@@ -36,7 +36,8 @@ import java.util.regex.Pattern;
  * dates to {@code YYYY-MM} and computes experience months.
  *
  * <p>Skills are NOT resolved against the {@code skill} table here; {@code skillId/skillName}
- * are carried over from the inputs and the caller resolves them via {@code SkillLookupService}.
+ * are carried over from the inputs (gazetteer matches) and the caller resolves the others via
+ * {@code SkillResolutionService}.
  *
  * <p>{@code lowConfidenceFields} uses snake_case paths with 0-based indexes into the final
  * payload lists, matching the API JSON: {@code contact.email}, {@code contact.phone},

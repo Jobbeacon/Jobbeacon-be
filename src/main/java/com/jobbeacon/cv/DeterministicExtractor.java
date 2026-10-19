@@ -8,6 +8,7 @@ import com.jobbeacon.cv.DeterministicResult.SkillMatch;
 import com.jobbeacon.dto.cv.CvParsedPayload;
 import com.jobbeacon.dto.skill.SkillRef;
 import com.jobbeacon.service.SkillLookupService;
+import com.jobbeacon.utils.SkillUtils;
 import java.text.Normalizer;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -18,7 +19,6 @@ import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -1080,12 +1080,12 @@ public class DeterministicExtractor {
 
   /**
    * Gazetteer match over lines: whole chunks containing separators (e.g. "CI/CD"), then greedy
-   * longest 3/2/1-token n-grams of whitespace-adjacent tokens. Keys are normalized with
-   * {@code trim().toLowerCase(Locale.ROOT)} like {@link SkillLookupService#nameIndex()}.
+   * longest 3/2/1-token n-grams of whitespace-adjacent tokens. Chunks and n-grams are cleaned first,
+   * then keyed with {@link SkillUtils#normalizeSkill} like {@link SkillLookupService#nameIndex()}.
    * Single-char tokens only match when written in uppercase ("C", "R"); digit-only tokens never match.
-   * Skills with a name of at most {@value #SHORT_SKILL_LENGTH} chars ("Go", "R") only match with
-   * the exact case of the skill name, or anywhere inside the SKILLS section. Matches touching
-   * {@code &} ("R&D") are rejected.
+   * Skills with a name, or matched text (e.g. an alias), of at most {@value #SHORT_SKILL_LENGTH}
+   * chars ("Go", "R") only match with the exact case of the skill name, or anywhere inside the
+   * SKILLS section. Matches touching {@code &} ("R&D") are rejected.
    *
    * @param skillsLine {@code skillsLine[i]} true when line {@code i} is in the SKILLS section
    */
@@ -1113,7 +1113,7 @@ public class DeterministicExtractor {
         if (cleaned.isEmpty() || TOKEN.matcher(cleaned).matches()) {
           continue;
         }
-        SkillRef ref = index.get(cleaned.trim().toLowerCase(Locale.ROOT));
+        SkillRef ref = index.get(SkillUtils.normalizeSkill(cleaned));
         if (ref != null && acceptable(ref, cleaned, inSkills)) {
           addMatch(matches, ref, cleaned, line);
           for (int t = 0; t < tokens.size(); t++) {
@@ -1137,7 +1137,7 @@ public class DeterministicExtractor {
           if (n == 1 && !singleTokenEligible(gram) || touchesAmpersand(line, gramStart, gramEnd)) {
             continue;
           }
-          String key = WHITESPACE.matcher(gram).replaceAll(" ").trim().toLowerCase(Locale.ROOT);
+          String key = SkillUtils.normalizeSkill(WHITESPACE.matcher(gram).replaceAll(" "));
           SkillRef ref = index.get(key);
           if (ref != null && acceptable(ref, gram, inSkills)) {
             addMatch(matches, ref, gram, line);
@@ -1179,7 +1179,9 @@ public class DeterministicExtractor {
 
   private static boolean acceptable(SkillRef ref, String matched, boolean inSkills) {
     String name = ref.name().trim();
-    return inSkills || name.length() > SHORT_SKILL_LENGTH || name.equals(matched.trim());
+    String surface = matched.trim();
+    return inSkills || name.length() > SHORT_SKILL_LENGTH && surface.length() > SHORT_SKILL_LENGTH
+        || name.equals(surface);
   }
 
   private static boolean singleTokenEligible(String token) {

@@ -28,7 +28,20 @@ public interface CvProfileService {
   /** Deletes the profile (mappings cascade); {@code cv_profile_not_found} if there is none. */
   void deleteProfile(UUID userId);
 
+  /** Skill mappings of the user's profile; {@code cv_profile_not_found} if there is no profile. */
+  CvProfileSkills getSkills(UUID userId);
+
+  /**
+   * Removes one skill from the user's profile. {@code cv_profile_not_found} if there is no profile,
+   * {@code cv_profile_skill_not_found} if the skill is not mapped to it. A new CV extraction replaces
+   * all mappings, so a removed skill can come back.
+   */
+  void deleteSkill(UUID userId, UUID skillId);
+
   record CvProfileView(CvProfile profile, List<SkillEntry> skills) {
+  }
+
+  record CvProfileSkills(UUID profileId, List<SkillEntry> skills) {
   }
 
   record SkillEntry(
