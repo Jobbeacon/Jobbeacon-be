@@ -1,0 +1,23 @@
+# Profile "test": dùng cho integration test (AbstractIntegrationTest).
+# Datasource được gán động từ Testcontainers (@DynamicPropertySource), không đọc DB_URL.
+spring:
+  liquibase:
+    enabled: true
+  jpa:
+    hibernate:
+      ddl-auto: update
+  rabbitmq:
+    listener:
+      simple:
+        auto-startup: false
+      direct:
+        auto-startup: false
+
+app:
+  geocode:
+    enabled: false
+  gemini:
+    api-key: ""
+  cv:
+    # Index skill luôn nạp lại để test vừa insert skill thấy ngay.
+    skill-index-ttl: 0s

@@ -13,9 +13,12 @@ import com.jobbeacon.service.SkillResolutionService;
 import com.jobbeacon.utils.SkillUtils;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -23,6 +26,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.UUID;
 
 @Slf4j
 @Service
@@ -76,6 +80,7 @@ public class SkillResolutionServiceImpl implements SkillResolutionService {
     private final GeminiEmbeddingClient geminiEmbeddingClient;
     private final GeminiChatClient geminiChatClient;
     private final ObjectMapper objectMapper;
+    private final TransactionTemplate requiresNewTemplate;
 
     @Value("${app.skill-resolution.min-similarity:0.7}")
     private double minSimilarity;
@@ -87,39 +92,66 @@ public class SkillResolutionServiceImpl implements SkillResolutionService {
                                       SkillAliasRepository skillAliasRepository,
                                       GeminiEmbeddingClient geminiEmbeddingClient,
                                       GeminiChatClient geminiChatClient,
-                                      ObjectMapper objectMapper) {
+                                      ObjectMapper objectMapper,
+                                      PlatformTransactionManager transactionManager) {
         this.skillRepository = skillRepository;
         this.skillAliasRepository = skillAliasRepository;
         this.geminiEmbeddingClient = geminiEmbeddingClient;
         this.geminiChatClient = geminiChatClient;
         this.objectMapper = objectMapper;
+        this.requiresNewTemplate = new TransactionTemplate(transactionManager);
+        this.requiresNewTemplate.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
     }
 
     @Override
-    @Transactional
     public Set<Skill> resolveSkills(List<String> rawSkills) {
-        if (rawSkills == null || rawSkills.isEmpty()) {
-            return new HashSet<>();
-        }
-
-        Map<String, Skill> resolved = new LinkedHashMap<>();
-        for (String rawSkill : rawSkills) {
-            String normalized = SkillUtils.normalizeSkill(rawSkill);
-            if (normalized == null || normalized.isEmpty() || resolved.containsKey(normalized)) {
-                continue;
-            }
-            resolved.put(normalized, resolveSkill(rawSkill.trim(), normalized));
-        }
-
-        return new HashSet<>(resolved.values());
+        return new HashSet<>(resolveSkillMap(rawSkills, Integer.MAX_VALUE).values());
     }
 
-    private Skill resolveSkill(String name, String normalized) {
-        Optional<Skill> existing = findByNormalized(normalized);
-        if (existing.isPresent()) {
-            return existing.get();
+    /**
+     * Not transactional on purpose: no connection is held while calling Gemini. Skills and aliases
+     * are created in their own REQUIRES_NEW transactions, then read again in the caller's context.
+     */
+    @Override
+    public Map<String, Skill> resolveSkillMap(List<String> rawSkills, int maxNewLookups) {
+        Map<String, Skill> resolved = new LinkedHashMap<>();
+        if (rawSkills == null || rawSkills.isEmpty()) {
+            return resolved;
         }
 
+        Set<String> seen = new HashSet<>();
+        int newLookups = 0;
+        int skipped = 0;
+        for (String rawSkill : rawSkills) {
+            String normalized = SkillUtils.normalizeSkill(rawSkill);
+            if (normalized == null || normalized.isEmpty() || !seen.add(normalized)) {
+                continue;
+            }
+            String name = rawSkill.trim();
+            try {
+                Optional<Skill> existing = findByNormalized(normalized);
+                if (existing.isPresent()) {
+                    resolved.put(normalized, existing.get());
+                    continue;
+                }
+                if (newLookups >= maxNewLookups) {
+                    skipped++;
+                    continue;
+                }
+                newLookups++;
+                resolveNewSkill(name, normalized).ifPresent(skill -> resolved.put(normalized, skill));
+            } catch (RuntimeException e) {
+                log.warn("[resolveSkillMap] Failed to resolve skill '{}'. Skip it.", name, e);
+            }
+        }
+        if (skipped > 0) {
+            log.info("[resolveSkillMap] Skipped {} unknown skills over the limit of {} new lookups",
+                    skipped, maxNewLookups);
+        }
+        return resolved;
+    }
+
+    private Optional<Skill> resolveNewSkill(String name, String normalized) {
         float[] embedding;
         try {
             embedding = geminiEmbeddingClient.embed(name, EMBEDDING_TASK_TYPE);
@@ -139,8 +171,7 @@ public class SkillResolutionServiceImpl implements SkillResolutionService {
         if (matched.isPresent()) {
             Skill skill = matched.get();
             log.info("[resolveSkill] '{}' classified as alias of '{}'", name, skill.getName());
-            createAlias(name, normalized, skill);
-            return skill;
+            return createAlias(name, normalized, skill);
         }
 
         log.info("[resolveSkill] '{}' classified as new skill", name);
@@ -149,7 +180,7 @@ public class SkillResolutionServiceImpl implements SkillResolutionService {
 
     private Optional<Skill> findByNormalized(String normalized) {
         return skillRepository.findByNormalizedName(normalized)
-                .or(() -> skillAliasRepository.findByNormalizedAlias(normalized).map(SkillAlias::getSkill));
+                .or(() -> skillAliasRepository.findSkillByNormalizedAlias(normalized));
     }
 
     private Optional<Skill> classifyWithLlm(String name, List<SkillDistance> candidates) {
@@ -201,19 +232,45 @@ public class SkillResolutionServiceImpl implements SkillResolutionService {
                 %s""".formatted(name, candidateText);
     }
 
-    private Skill createSkill(String name, String normalized, float[] embedding) {
-        Skill skill = new Skill();
-        skill.setName(name);
-        skill.setNormalizedName(normalized);
-        skill.setEmbedding(embedding);
-        return skillRepository.save(skill);
+    /**
+     * Creates the skill in its own transaction; on a concurrent insert of the same normalized name,
+     * returns the existing one. The result is read again in the caller's persistence context.
+     */
+    private Optional<Skill> createSkill(String name, String normalized, float[] embedding) {
+        UUID id;
+        try {
+            id = requiresNewTemplate.execute(status -> {
+                Skill skill = new Skill();
+                skill.setName(name);
+                skill.setNormalizedName(normalized);
+                skill.setEmbedding(embedding);
+                return skillRepository.saveAndFlush(skill).getId();
+            });
+        } catch (DataIntegrityViolationException e) {
+            log.info("[createSkill] Skill '{}' already created concurrently. Use the existing one.", name);
+            return findByNormalized(normalized);
+        }
+        return skillRepository.findById(id);
     }
 
-    private void createAlias(String alias, String normalized, Skill skill) {
-        SkillAlias skillAlias = new SkillAlias();
-        skillAlias.setAlias(alias);
-        skillAlias.setNormalizedAlias(normalized);
-        skillAlias.setSkill(skill);
-        skillAliasRepository.save(skillAlias);
+    /**
+     * Creates the alias in its own transaction and returns the target skill; on a concurrent insert of
+     * the same normalized alias, returns the skill that alias points to.
+     */
+    private Optional<Skill> createAlias(String alias, String normalized, Skill skill) {
+        UUID skillId = skill.getId();
+        try {
+            requiresNewTemplate.executeWithoutResult(status -> {
+                SkillAlias skillAlias = new SkillAlias();
+                skillAlias.setAlias(alias);
+                skillAlias.setNormalizedAlias(normalized);
+                skillAlias.setSkill(skillRepository.getReferenceById(skillId));
+                skillAliasRepository.saveAndFlush(skillAlias);
+            });
+        } catch (DataIntegrityViolationException e) {
+            log.info("[createAlias] Alias '{}' already created concurrently. Use the existing one.", alias);
+            return findByNormalized(normalized);
+        }
+        return Optional.of(skill);
     }
 }
