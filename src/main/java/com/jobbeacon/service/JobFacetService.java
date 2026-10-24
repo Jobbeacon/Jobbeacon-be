@@ -37,6 +37,17 @@ public class JobFacetService {
                 """);
     }
 
+    @Transactional(readOnly = true)
+    public List<FacetItemResponse> sourcesInUse() {
+        return rows("""
+                select js.domain, count(distinct m.job_id)
+                from job_source js
+                join job_source_mapping m on m.source_id = js.id
+                group by js.domain
+                order by count(distinct m.job_id) desc, js.domain
+                """);
+    }
+
     @SuppressWarnings("unchecked")
     private List<FacetItemResponse> rows(String sql) {
         List<Object[]> rows = entityManager.createNativeQuery(sql).getResultList();

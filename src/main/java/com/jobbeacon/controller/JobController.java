@@ -1,6 +1,7 @@
 package com.jobbeacon.controller;
 
 import com.jobbeacon.dto.request.JobSearchRequest;
+import com.jobbeacon.dto.response.FacetItemResponse;
 import com.jobbeacon.dto.response.JobFacetsResponse;
 import com.jobbeacon.dto.response.ResponseGeneral;
 import com.jobbeacon.service.JobFacetService;
@@ -9,6 +10,7 @@ import com.jobbeacon.utils.JsonUtils;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -32,6 +34,11 @@ public class JobController {
                 "success",
                 new JobFacetsResponse(jobFacetService.rootCategories(), jobFacetService.skillsInUse())
         );
+    }
+
+    @GetMapping("/sources")
+    public ResponseGeneral<List<FacetItemResponse>> sources() {
+        return ResponseGeneral.ofSuccess("success", jobFacetService.sourcesInUse());
     }
 
     @GetMapping("/{jobId}")
