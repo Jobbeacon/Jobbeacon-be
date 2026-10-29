@@ -16,6 +16,9 @@ public interface CategoryRepository extends BaseRepository<Category> {
     Optional<Category> findByNameIgnoreCase(String name);
     long countByEmbeddingIsNotNull();
 
+    @Query("select c.name from Category c where c.level = :level and c.name is not null")
+    List<String> findNamesByLevel(@Param("level") Integer level);
+
     @Query("select c.id, c.name, c.parent.id, c.level, c.path from Category c")
     List<Object[]> findAllForTree();
 
