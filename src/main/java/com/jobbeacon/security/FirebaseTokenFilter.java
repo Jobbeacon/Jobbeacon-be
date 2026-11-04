@@ -59,7 +59,7 @@ public class FirebaseTokenFilter extends OncePerRequestFilter {
       final UsernamePasswordAuthenticationToken authentication = createAuthentication(firebaseToken, request);
       SecurityContextHolder.getContext().setAuthentication(authentication);
       log.debug("Firebase authentication successful for user: {}", firebaseToken.getEmail());
-    } catch (FirebaseAuthException e) {
+    } catch (FirebaseAuthException | IllegalArgumentException e) {
       log.warn("Firebase token verification failed: {}", e.getMessage());
 
       SecurityContextHolder.clearContext();

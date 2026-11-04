@@ -1,6 +1,6 @@
 package com.jobbeacon.security;
 
-import lombok.RequiredArgsConstructor;
+import jakarta.servlet.DispatcherType;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
@@ -28,9 +28,14 @@ import java.util.List;
 public class SecurityConfiguration {
 
   private final ObjectProvider<FirebaseTokenFilter> firebaseTokenFilter;
+  private final RestAuthenticationEntryPoint restAuthenticationEntryPoint;
 
-  public SecurityConfiguration(ObjectProvider<FirebaseTokenFilter> firebaseTokenFilter) {
+  public SecurityConfiguration(
+      ObjectProvider<FirebaseTokenFilter> firebaseTokenFilter,
+      RestAuthenticationEntryPoint restAuthenticationEntryPoint
+  ) {
     this.firebaseTokenFilter = firebaseTokenFilter;
+    this.restAuthenticationEntryPoint = restAuthenticationEntryPoint;
   }
 
   @Value("${app.cors.allowed-origins:http://localhost:5173}")
@@ -41,7 +46,9 @@ public class SecurityConfiguration {
     http.csrf(AbstractHttpConfigurer::disable)
         .cors(cors -> cors.configurationSource(corsConfigurationSource()))
         .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+        .exceptionHandling(ex -> ex.authenticationEntryPoint(restAuthenticationEntryPoint))
         .authorizeHttpRequests(auth -> auth
+            .dispatcherTypeMatchers(DispatcherType.ASYNC, DispatcherType.ERROR).permitAll()
             .requestMatchers("/swagger-ui/**", "/swagger-ui.html", "/v3/api-docs/**").permitAll()
             .requestMatchers("/actuator/health", "/actuator/info").permitAll()
             .requestMatchers("/api/v1/health").permitAll()
@@ -49,7 +56,6 @@ public class SecurityConfiguration {
             .requestMatchers(HttpMethod.GET, "/api/v1/locations/**").permitAll()
             .requestMatchers(HttpMethod.GET, "/api/v1/categories").permitAll()
             .requestMatchers(HttpMethod.GET, "/api/v1/companies", "/api/v1/companies/**").permitAll()
-
             .anyRequest().authenticated());
 
     FirebaseTokenFilter filter = firebaseTokenFilter.getIfAvailable();

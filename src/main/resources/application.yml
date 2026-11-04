@@ -25,6 +25,12 @@ spring:
   jackson:
     property-naming-strategy: SNAKE_CASE
 
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+
   servlet:
     multipart:
       max-file-size: 10MB
@@ -59,21 +65,31 @@ app:
       max-retries: ${GEMINI_RETRY_MAX_RETRIES:5}
       initial-delay-ms: ${GEMINI_RETRY_INITIAL_DELAY_MS:2000}
       multiplier: ${GEMINI_RETRY_MULTIPLIER:2.0}
-  cv:
-    max-file-size: ${CV_MAX_FILE_SIZE:10MB}
-    max-pages: ${CV_MAX_PAGES:20}
-    skill-index-ttl: ${CV_SKILL_INDEX_TTL:10m}
-    t-min: ${CV_T_MIN:0.6}
-    e-min: ${CV_E_MIN:0.5}
-    q-high: ${CV_Q_HIGH:0.8}
-    q-low: ${CV_Q_LOW:0.45}
-    ocr-min-chars-per-page: ${CV_OCR_MIN_CHARS_PER_PAGE:100}
-    model-timeout: ${CV_MODEL_TIMEOUT:30s}
-    max-output-tokens: ${CV_MAX_OUTPUT_TOKENS:8192}
-    model-thinking-budget: ${CV_MODEL_THINKING_BUDGET:0}
-    pdf-parse-timeout: ${CV_PDF_PARSE_TIMEOUT:15s}
-    pdf-parse-threads: ${CV_PDF_PARSE_THREADS:4}
-    max-new-skills: ${CV_MAX_NEW_SKILLS:10}
+  chat:
+    session-ttl: ${CHAT_SESSION_TTL:30m}
+    history-token-budget: ${CHAT_HISTORY_TOKEN_BUDGET:6000}
+    chars-per-token: ${CHAT_CHARS_PER_TOKEN:3.0}
+    min-history-turns: ${CHAT_MIN_HISTORY_TURNS:2}
+    max-output-tokens: ${CHAT_MAX_OUTPUT_TOKENS:1500}
+    # Gemini 3.x: dùng thinking-level (minimal|low|medium|high); Gemini 2.5: để trống level, đặt thinking-budget (0 = tắt).
+    # Để trống cả hai thì không gửi thinkingConfig. Không đặt cả hai cùng lúc.
+    thinking-level: ${CHAT_THINKING_LEVEL:low}
+    thinking-budget: ${CHAT_THINKING_BUDGET:}
+    request-timeout: ${CHAT_REQUEST_TIMEOUT:20s}
+    turn-deadline: ${CHAT_TURN_DEADLINE:45s}
+    retry:
+      max-retries: ${CHAT_RETRY_MAX_RETRIES:1}
+      initial-delay-ms: ${CHAT_RETRY_INITIAL_DELAY_MS:500}
+      multiplier: ${CHAT_RETRY_MULTIPLIER:2.0}
+    search:
+      default-size: ${CHAT_SEARCH_DEFAULT_SIZE:6}
+      max-size: ${CHAT_SEARCH_MAX_SIZE:10}
+    detail:
+      description-max-chars: ${CHAT_DETAIL_DESCRIPTION_MAX_CHARS:2000}
+      benefits-max-chars: ${CHAT_DETAIL_BENEFITS_MAX_CHARS:800}
+    stream:
+      sse-timeout: ${CHAT_STREAM_SSE_TIMEOUT:60s}
+      shutdown-grace: ${CHAT_STREAM_SHUTDOWN_GRACE:10s}
   category-classification:
     min-score: ${CATEGORY_CLASSIFICATION_MIN_SCORE:0.72}
     min-margin: ${CATEGORY_CLASSIFICATION_MIN_MARGIN:0.03}
