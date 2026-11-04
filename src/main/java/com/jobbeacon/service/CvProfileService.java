@@ -22,13 +22,22 @@ public interface CvProfileService {
    */
   CvProfileView saveParsed(UUID userId, CvParsedPayload payload, String parserModelVersion);
 
-  /** Profile with its skill mappings; {@code cv_profile_not_found} otherwise. */
+  /**
+   * Profile with its skill mappings; {@code cv_profile_not_found} if there is no row. The profile may
+   * be an empty one created by {@link #addSkill} (D-011): no CV fields, {@code parsedAt} null.
+   */
   CvProfileView getProfile(UUID userId);
 
-  /** Deletes the profile (mappings cascade); {@code cv_profile_not_found} if there is none. */
+  /**
+   * Deletes the profile (mappings cascade, including manually added skills);
+   * {@code cv_profile_not_found} if there is none.
+   */
   void deleteProfile(UUID userId);
 
-  /** Skill mappings of the user's profile; {@code cv_profile_not_found} if there is no profile. */
+  /**
+   * Skill mappings of the user's profile. Never throws for a missing profile: returns a
+   * {@code CvProfileSkills} with a null {@code profileId} and an empty list instead.
+   */
   CvProfileSkills getSkills(UUID userId);
 
   /**
@@ -38,9 +47,22 @@ public interface CvProfileService {
    */
   void deleteSkill(UUID userId, UUID skillId);
 
+  /**
+   * Adds an existing skill picked by the user to their profile (D-011), creating an empty profile
+   * (only {@code user_id}) if there is none yet. Runs in its own transaction and retries once on a
+   * concurrent insert. The new mapping has no confidence/experience/evidence. A new CV extraction
+   * replaces all mappings, including manual ones.
+   *
+   * @return the profile's skills after adding
+   * @throws com.jobbeacon.exception.base.NotFoundException {@code skill_not_found}
+   * @throws com.jobbeacon.exception.base.ConflictException {@code cv_profile_skill_exists}
+   */
+  CvProfileSkills addSkill(UUID userId, UUID skillId);
+
   record CvProfileView(CvProfile profile, List<SkillEntry> skills) {
   }
 
+  /** {@code profileId} is null when the user has no profile yet. */
   record CvProfileSkills(UUID profileId, List<SkillEntry> skills) {
   }
 

@@ -1,5 +1,6 @@
 package com.jobbeacon.controller;
 
+import com.jobbeacon.dto.request.AddCvSkillRequest;
 import com.jobbeacon.dto.response.CvProfileResponse;
 import com.jobbeacon.dto.response.CvProfileSkillsResponse;
 import com.jobbeacon.dto.response.ResponseGeneral;
@@ -8,12 +9,14 @@ import com.jobbeacon.exception.CvExtractionException;
 import com.jobbeacon.security.CurrentUser;
 import com.jobbeacon.service.CvExtractionService;
 import com.jobbeacon.service.CvProfileService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -57,6 +60,15 @@ public class CvProfileController {
   public ResponseGeneral<CvProfileSkillsResponse> getSkills(@CurrentUser User user) {
     return ResponseGeneral.ofSuccess("success",
         CvProfileSkillsResponse.from(cvProfileService.getSkills(user.getId())));
+  }
+
+  @PostMapping("/skills")
+  public ResponseGeneral<CvProfileSkillsResponse> addSkill(
+      @CurrentUser User user,
+      @Valid @RequestBody AddCvSkillRequest request
+  ) {
+    return ResponseGeneral.ofSuccess("success",
+        CvProfileSkillsResponse.from(cvProfileService.addSkill(user.getId(), request.getSkillId())));
   }
 
   @DeleteMapping("/skills/{skillId}")

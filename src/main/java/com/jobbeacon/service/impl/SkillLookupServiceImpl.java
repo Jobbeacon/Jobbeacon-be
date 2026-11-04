@@ -11,9 +11,11 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -22,6 +24,17 @@ import org.springframework.stereotype.Service;
 @Slf4j
 @Service
 public class SkillLookupServiceImpl implements SkillLookupService {
+
+  private static final int MIN_SEARCH_LIMIT = 1;
+  private static final int MAX_SEARCH_LIMIT = 20;
+  private static final int RANK_EXACT = 0;
+  private static final int RANK_PREFIX = 1;
+  private static final int RANK_CONTAINS = 2;
+  private static final Comparator<RankedSkill> SEARCH_ORDER = Comparator
+      .comparingInt(RankedSkill::rank)
+      .thenComparingInt(r -> r.ref().name().length())
+      .thenComparing(r -> r.ref().name(), String.CASE_INSENSITIVE_ORDER)
+      .thenComparing(r -> r.ref().id().toString());
 
   private final SkillRepository skillRepository;
   private final SkillAliasRepository skillAliasRepository;
@@ -69,6 +82,40 @@ public class SkillLookupServiceImpl implements SkillLookupService {
     }
   }
 
+  @Override
+  public List<SkillRef> search(String q, int limit) {
+    String query = SkillUtils.normalizeSkill(q);
+    if (query == null || query.isEmpty()) {
+      return List.of();
+    }
+    int size = Math.max(MIN_SEARCH_LIMIT, Math.min(MAX_SEARCH_LIMIT, limit));
+    Map<UUID, RankedSkill> best = new HashMap<>();
+    for (Map.Entry<String, SkillRef> entry : nameIndex().entrySet()) {
+      int rank = rank(entry.getKey(), query);
+      if (rank < 0) {
+        continue;
+      }
+      SkillRef ref = entry.getValue();
+      best.merge(ref.id(), new RankedSkill(ref, rank),
+          (current, candidate) -> candidate.rank() < current.rank() ? candidate : current);
+    }
+    return best.values().stream()
+        .sorted(SEARCH_ORDER)
+        .limit(size)
+        .map(RankedSkill::ref)
+        .toList();
+  }
+
+  private static int rank(String key, String query) {
+    if (key.equals(query)) {
+      return RANK_EXACT;
+    }
+    if (key.startsWith(query)) {
+      return RANK_PREFIX;
+    }
+    return key.contains(query) ? RANK_CONTAINS : -1;
+  }
+
   private boolean isFresh(CachedIndex current) {
     return current != null && clock.instant().isBefore(current.loadedAt().plus(ttl));
   }
@@ -92,6 +139,9 @@ public class SkillLookupServiceImpl implements SkillLookupService {
     if (key != null && !key.isEmpty()) {
       index.putIfAbsent(key, ref);
     }
+  }
+
+  private record RankedSkill(SkillRef ref, int rank) {
   }
 
   private record CachedIndex(Map<String, SkillRef> index, Instant loadedAt) {
