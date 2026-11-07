@@ -22,6 +22,7 @@ import com.jobbeacon.repository.CategoryRepository;
 import com.jobbeacon.repository.CompanyRepository;
 import com.jobbeacon.repository.JobLocationRepository;
 import com.jobbeacon.repository.JobElasticsearchRepository;
+import com.jobbeacon.graph.GraphSyncOutboxService;
 import com.jobbeacon.repository.JobRepository;
 import com.jobbeacon.repository.JobSourceRepository;
 import com.jobbeacon.search.JobSearchOutboxService;
@@ -60,6 +61,7 @@ public class JobServiceImpl implements JobService {
     private final LocationMappingService locationMappingService;
     private final JobLocationRepository jobLocationRepository;
     private final JobSearchOutboxService jobSearchOutboxService;
+    private final GraphSyncOutboxService graphSyncOutboxService;
     private final JobElasticsearchRepository jobElasticsearchRepository;
     private final CategoryRepository categoryRepository;
 
@@ -162,6 +164,7 @@ public class JobServiceImpl implements JobService {
             job.getJobSourceMappings().add(mapping);
         }
         jobSearchOutboxService.created(job, jobLocations);
+        graphSyncOutboxService.jobChanged(job.getId());
     }
 
     @Override

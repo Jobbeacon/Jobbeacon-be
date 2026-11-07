@@ -36,6 +36,12 @@ spring:
     username: ${RABBITMQ_USERNAME:guest}
     password: ${RABBITMQ_PASSWORD:guest}
 
+  neo4j:
+    uri: ${NEO4J_URI:bolt://localhost:7687}
+    authentication:
+      username: ${NEO4J_USERNAME:neo4j}
+      password: ${NEO4J_PASSWORD:change_this_password}
+
 app:
   geocode:
     enabled: true
@@ -85,6 +91,13 @@ app:
     index: ${ELASTICSEARCH_JOB_INDEX:jobs}
   search:
     backfill-on-startup: ${SEARCH_BACKFILL_ON_STARTUP:false}
+  graph:
+    enabled: ${GRAPH_ENABLED:false}
+    database: ${NEO4J_DATABASE:neo4j}
+    batch-size: ${GRAPH_BATCH_SIZE:500}
+    max-attempts: ${GRAPH_MAX_ATTEMPTS:10}
+    poll-interval: ${GRAPH_POLL_INTERVAL:PT5S}
+    backfill-on-startup: ${GRAPH_BACKFILL_ON_STARTUP:false}
 
 server:
   port: ${PORT:8080}
