@@ -32,13 +32,4 @@ public class GraphSyncOutbox {
 
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
-
-    @Column(name = "processed_at")
-    private Instant processedAt;
-
-    @Column(name = "attempts", nullable = false)
-    private int attempts;
-
-    @Column(name = "last_error", columnDefinition = "TEXT")
-    private String lastError;
 }

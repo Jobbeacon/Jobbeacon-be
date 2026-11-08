@@ -4,6 +4,7 @@ import com.jobbeacon.dto.request.PageRequestDto;
 import com.jobbeacon.dto.response.PageResponse;
 import com.jobbeacon.dto.response.SavedJobResponse;
 import com.jobbeacon.exception.base.NotFoundException;
+import com.jobbeacon.graph.GraphSyncOutboxService;
 import com.jobbeacon.repository.JobRepository;
 import com.jobbeacon.repository.UserSavedJobRepository;
 import com.jobbeacon.service.SavedJobService;
@@ -26,6 +27,7 @@ public class SavedJobServiceImpl implements SavedJobService {
 
   private final UserSavedJobRepository userSavedJobRepository;
   private final JobRepository jobRepository;
+  private final GraphSyncOutboxService graphSyncOutboxService;
 
   @Override
   @Transactional
@@ -33,13 +35,17 @@ public class SavedJobServiceImpl implements SavedJobService {
     if (!jobRepository.existsById(jobId)) {
       throw new NotFoundException(JOB_NOT_FOUND_CODE);
     }
-    userSavedJobRepository.saveIfAbsent(userId, jobId);
+    if (userSavedJobRepository.saveIfAbsent(userId, jobId) > 0) {
+      graphSyncOutboxService.candidateChanged(userId);
+    }
   }
 
   @Override
   @Transactional
   public void unsaveJob(UUID userId, UUID jobId) {
-    userSavedJobRepository.deleteByUserIdAndJobId(userId, jobId);
+    if (userSavedJobRepository.deleteByUserIdAndJobId(userId, jobId) > 0) {
+      graphSyncOutboxService.candidateChanged(userId);
+    }
   }
 
   @Override

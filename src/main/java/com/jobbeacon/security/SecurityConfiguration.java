@@ -1,6 +1,6 @@
 package com.jobbeacon.security;
 
-import lombok.RequiredArgsConstructor;
+import com.jobbeacon.internal.InternalTokenFilter;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
@@ -36,6 +36,9 @@ public class SecurityConfiguration {
   @Value("${app.cors.allowed-origins:http://localhost:5173}")
   private String allowedOrigins;
 
+  @Value("${app.internal.token:}")
+  private String internalToken;
+
   @Bean
   public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
     http.csrf(AbstractHttpConfigurer::disable)
@@ -49,6 +52,7 @@ public class SecurityConfiguration {
             .requestMatchers(HttpMethod.GET, "/api/v1/locations/**").permitAll()
             .requestMatchers(HttpMethod.GET, "/api/v1/categories").permitAll()
             .requestMatchers(HttpMethod.GET, "/api/v1/companies", "/api/v1/companies/**").permitAll()
+            .requestMatchers("/internal/**").hasAuthority(InternalTokenFilter.AUTHORITY)
 
             .anyRequest().authenticated());
 
@@ -56,6 +60,7 @@ public class SecurityConfiguration {
     if (filter != null) {
       http.addFilterBefore(filter, UsernamePasswordAuthenticationFilter.class);
     }
+    http.addFilterBefore(new InternalTokenFilter(internalToken), UsernamePasswordAuthenticationFilter.class);
 
     return http.build();
   }
