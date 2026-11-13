@@ -1,21 +1,28 @@
 package com.jobbeacon.service.impl;
 
 import com.google.firebase.auth.FirebaseToken;
+import com.jobbeacon.constant.UserRole;
 import com.jobbeacon.constant.UserStatus;
 import com.jobbeacon.entity.User;
 import com.jobbeacon.exception.BusinessException;
+import com.jobbeacon.exception.base.ForbiddenException;
 import com.jobbeacon.exception.base.UnauthorizedException;
 import com.jobbeacon.repository.UserRepository;
 import com.jobbeacon.service.UserSyncService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.util.Arrays;
+import java.util.Locale;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 @Slf4j
@@ -23,6 +30,17 @@ import java.util.UUID;
 public class UserSyncServiceImpl implements UserSyncService {
 
   private final UserRepository userRepository;
+
+  /** Emails promoted to ADMIN on sign-in; bootstraps the first administrator. */
+  private Set<String> adminEmails = Set.of();
+
+  @Value("${app.admin.emails:}")
+  void setAdminEmails(String emails) {
+    this.adminEmails = Arrays.stream(emails == null ? new String[0] : emails.split(","))
+        .map(email -> email.trim().toLowerCase(Locale.ROOT))
+        .filter(email -> !email.isEmpty())
+        .collect(Collectors.toUnmodifiableSet());
+  }
 
   @Override
   @Transactional
@@ -85,6 +103,7 @@ public class UserSyncServiceImpl implements UserSyncService {
         .displayName(finalName)
         .avatarUrl(picture)
         .status(UserStatus.ACTIVE)
+        .role(this.isBootstrapAdmin(email) ? UserRole.ADMIN : UserRole.USER)
         .lastLoginAt(Instant.now())
         .build();
     newUser = this.userRepository.save(newUser);
@@ -104,12 +123,12 @@ public class UserSyncServiceImpl implements UserSyncService {
     }
 
     if (auth.getPrincipal() instanceof User user) {
-      return user;
+      return this.requireActive(user);
     }
 
     final Object details = auth.getDetails();
     if (details instanceof FirebaseToken firebaseToken) {
-      return this.syncFromFirebaseToken(firebaseToken);
+      return this.requireActive(this.syncFromFirebaseToken(firebaseToken));
     }
 
     log.warn("Security check failed: Authentication object is not of type FirebaseToken");
@@ -131,8 +150,27 @@ public class UserSyncServiceImpl implements UserSyncService {
       user.setAvatarUrl(picture);
     }
     user.setLastLoginAt(Instant.now());
+    if (this.isBootstrapAdmin(user.getEmail()) && user.getRole() != UserRole.ADMIN) {
+      user.setRole(UserRole.ADMIN);
+      log.info("Promoted bootstrap admin: {}", user.getEmail());
+    }
     log.debug("Updated existing user (Firebase): {}", user.getEmail());
 
     return this.userRepository.save(user);
+  }
+
+  private boolean isBootstrapAdmin(final String email) {
+    return email != null && this.adminEmails.contains(email.trim().toLowerCase(Locale.ROOT));
+  }
+
+  /** Suspended or deleted accounts keep their Firebase login but may not use the API. */
+  private User requireActive(final User user) {
+    if (user.getStatus() == UserStatus.SUSPENDED) {
+      throw new ForbiddenException("user_suspended");
+    }
+    if (user.getStatus() == UserStatus.DELETED) {
+      throw new ForbiddenException("user_deleted");
+    }
+    return user;
   }
 }

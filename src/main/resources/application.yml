@@ -55,7 +55,10 @@ app:
     job-posting:
       queue: job-posting.parsed
   cors:
-    allowed-origins: ${CORS_ORIGINS:http://localhost:5173}
+    allowed-origins: ${CORS_ORIGINS:http://localhost:5173,http://localhost:5174}
+  admin:
+    # Emails promoted to ADMIN when they sign in (comma separated). Used to bootstrap the first admin.
+    emails: ${APP_ADMIN_EMAILS:}
   gemini:
     api-key: ${GEMINI_API_KEY:}
     embedding-model: ${GEMINI_EMBEDDING_MODEL:gemini-embedding-2}

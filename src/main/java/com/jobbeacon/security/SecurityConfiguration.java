@@ -38,7 +38,7 @@ public class SecurityConfiguration {
     this.restAuthenticationEntryPoint = restAuthenticationEntryPoint;
   }
 
-  @Value("${app.cors.allowed-origins:http://localhost:5173}")
+  @Value("${app.cors.allowed-origins:http://localhost:5173,http://localhost:5174}")
   private String allowedOrigins;
 
   @Bean
@@ -71,7 +71,7 @@ public class SecurityConfiguration {
     CorsConfiguration configuration = new CorsConfiguration();
 
     log.info("(allowedOrigins) :{}", allowedOrigins);
-    configuration.setAllowedOrigins(Arrays.asList(allowedOrigins.split(",")));
+    configuration.setAllowedOrigins(Arrays.stream(allowedOrigins.split(",")).map(String::trim).filter(o -> !o.isEmpty()).toList());
     configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
     configuration.setAllowedHeaders(List.of("*"));
     configuration.setAllowCredentials(true);

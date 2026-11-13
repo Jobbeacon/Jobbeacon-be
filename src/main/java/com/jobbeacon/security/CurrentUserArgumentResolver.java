@@ -29,6 +29,11 @@ public class CurrentUserArgumentResolver implements HandlerMethodArgumentResolve
       NativeWebRequest webRequest,
       WebDataBinderFactory binderFactory
   ) {
+    Object resolved = webRequest.getAttribute(
+        AdminAccessInterceptor.CURRENT_USER_ATTRIBUTE, NativeWebRequest.SCOPE_REQUEST);
+    if (resolved instanceof User user) {
+      return user;
+    }
     return userSyncService.getCurrentUser();
   }
 }

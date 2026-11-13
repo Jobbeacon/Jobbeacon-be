@@ -4,6 +4,7 @@ import com.jobbeacon.dto.response.JobSummaryResponse;
 import com.jobbeacon.entity.Job;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -53,4 +54,10 @@ public interface JobRepository extends BaseRepository<Job> {
         """
     )
     Page<JobSummaryResponse> findJobsByCompanyId(@Param("companyId") UUID companyId, Pageable pageable);
+
+    @Modifying(flushAutomatically = true)
+    @Query("update Job j set j.company.id = :targetId where j.company.id = :sourceId")
+    int moveJobsToCompany(@Param("sourceId") UUID sourceId, @Param("targetId") UUID targetId);
+
+    boolean existsByCompanyId(UUID companyId);
 }
