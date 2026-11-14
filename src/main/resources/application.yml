@@ -54,7 +54,6 @@ app:
   rabbitmq:
     job-posting:
       queue: job-posting.parsed
-  internal-secret: ${GATEWAY_INTERNAL_SECRET:}
   gemini:
     api-key: ${GEMINI_API_KEY:}
     embedding-model: ${GEMINI_EMBEDDING_MODEL:gemini-embedding-2}
