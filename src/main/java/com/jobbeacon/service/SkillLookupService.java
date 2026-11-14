@@ -1,6 +1,7 @@
 package com.jobbeacon.service;
 
 import com.jobbeacon.dto.skill.SkillRef;
+import java.util.List;
 import java.util.Map;
 
 public interface SkillLookupService {
@@ -13,4 +14,13 @@ public interface SkillLookupService {
    * Cached in memory with a short TTL. Never creates a skill. The returned map is unmodifiable.
    */
   Map<String, SkillRef> nameIndex();
+
+  /**
+   * Searches {@link #nameIndex()} for autocomplete. {@code q} is normalized with
+   * {@code SkillUtils.normalizeSkill}; blank yields an empty list. Ranking: exact key match, then
+   * prefix, then contains; ties broken by shorter skill name, then name. Results are grouped by skill
+   * id (aliases resolve to their skill, keeping the best rank) and carry the skill's own name.
+   * {@code limit} is clamped to 1..20. Never queries the database beyond the cached index.
+   */
+  List<SkillRef> search(String q, int limit);
 }

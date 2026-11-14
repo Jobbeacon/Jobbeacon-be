@@ -5,6 +5,7 @@ import com.jobbeacon.entity.CvProfile;
 import com.jobbeacon.entity.CvSkillMapping;
 import com.jobbeacon.entity.Skill;
 import com.jobbeacon.event.CvProfilePublishedEvent;
+import com.jobbeacon.exception.base.ConflictException;
 import com.jobbeacon.exception.base.NotFoundException;
 import com.jobbeacon.graph.GraphSyncOutboxService;
 import com.jobbeacon.repository.CvProfileRepository;
@@ -42,6 +43,8 @@ public class CvProfileServiceImpl implements CvProfileService {
 
   static final String CV_PROFILE_NOT_FOUND = "cv_profile_not_found";
   static final String CV_PROFILE_SKILL_NOT_FOUND = "cv_profile_skill_not_found";
+  static final String CV_PROFILE_SKILL_EXISTS = "cv_profile_skill_exists";
+  static final String SKILL_NOT_FOUND = "skill_not_found";
   static final int EVIDENCE_MAX_LENGTH = 500;
   static final int SAVE_ATTEMPTS = 2;
 
@@ -130,8 +133,9 @@ public class CvProfileServiceImpl implements CvProfileService {
   @Transactional(readOnly = true)
   public CvProfileSkills getSkills(UUID userId) {
     log.info("(getSkills) userId: {}", userId);
-    CvProfile profile = findProfile(userId);
-    return new CvProfileSkills(profile.getId(), loadSkills(profile.getId()));
+    return cvProfileRepository.findByUserId(userId)
+        .map(profile -> new CvProfileSkills(profile.getId(), loadSkills(profile.getId())))
+        .orElseGet(() -> new CvProfileSkills(null, List.of()));
   }
 
   @Override
@@ -143,6 +147,54 @@ public class CvProfileServiceImpl implements CvProfileService {
       throw new NotFoundException(CV_PROFILE_SKILL_NOT_FOUND);
     }
     graphSyncOutboxService.candidateChanged(userId);
+  }
+
+  /**
+   * Not {@code @Transactional}: same retry pattern as {@link #saveParsed}. A concurrent first insert of
+   * the profile ({@code uq_cv_profile_user}) or of the same mapping (primary key) is retried once; the
+   * retry then sees the winner's row and reports {@code cv_profile_skill_exists} if the skill is there.
+   */
+  @Override
+  public CvProfileSkills addSkill(UUID userId, UUID skillId) {
+    log.info("(addSkill) userId: {}, skillId: {}", userId, skillId);
+    for (int attempt = 1; ; attempt++) {
+      try {
+        return transactionTemplate.execute(status -> insertSkill(userId, skillId));
+      } catch (DataIntegrityViolationException e) {
+        if (attempt >= SAVE_ATTEMPTS) {
+          throw e;
+        }
+        log.warn("(addSkill) userId: {}, skillId: {}, status: conflict_retry, attempt: {}",
+            userId, skillId, attempt);
+      }
+    }
+  }
+
+  private CvProfileSkills insertSkill(UUID userId, UUID skillId) {
+    Skill skill = skillRepository.findById(skillId)
+        .orElseThrow(() -> new NotFoundException(SKILL_NOT_FOUND));
+    CvProfile profile = cvProfileRepository.findByUserId(userId)
+        .orElseGet(() -> cvProfileRepository.saveAndFlush(emptyProfile(userId)));
+    CvSkillMapping.CvSkillMappingId id = new CvSkillMapping.CvSkillMappingId(profile.getId(), skill.getId());
+    if (cvSkillMappingRepository.existsById(id)) {
+      throw new ConflictException(CV_PROFILE_SKILL_EXISTS);
+    }
+    CvSkillMapping mapping = new CvSkillMapping();
+    mapping.setId(id);
+    mapping.setCvProfile(profile);
+    mapping.setSkill(skill);
+    cvSkillMappingRepository.saveAndFlush(mapping);
+    log.info("(addSkill) added, userId: {}, profileId: {}, skillId: {}", userId, profile.getId(), skillId);
+    return new CvProfileSkills(profile.getId(), loadSkills(profile.getId()));
+  }
+
+  /** Profile without a CV (D-011): parsed_at/uploaded_at/parser_model_version stay null. */
+  private static CvProfile emptyProfile(UUID userId) {
+    CvProfile profile = new CvProfile();
+    profile.setUserId(userId);
+    profile.setExperiences(new ArrayList<>());
+    profile.setEducations(new ArrayList<>());
+    return profile;
   }
 
   private CvProfile findProfile(UUID userId) {

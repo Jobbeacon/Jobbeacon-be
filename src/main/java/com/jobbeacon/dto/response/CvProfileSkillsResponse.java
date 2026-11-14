@@ -4,6 +4,7 @@ import com.jobbeacon.service.CvProfileService;
 import java.util.List;
 import java.util.UUID;
 
+/** {@code profileId} is null (and {@code skills} empty) when the user has no profile yet. */
 public record CvProfileSkillsResponse(
     UUID profileId,
     List<CvProfileSkillResponse> skills
