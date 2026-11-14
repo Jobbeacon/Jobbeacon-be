@@ -85,9 +85,6 @@ app:
     index: ${ELASTICSEARCH_JOB_INDEX:jobs}
   search:
     backfill-on-startup: ${SEARCH_BACKFILL_ON_STARTUP:false}
-  internal:
-    # Shared with services calling /internal/** (the recommendation service). Blank rejects every internal call.
-    token: ${INTERNAL_API_TOKEN:local-internal-token}
 
 server:
   port: ${PORT:8080}
@@ -101,3 +98,11 @@ auth:
 
 firebase:
   credentials-path: ${FIREBASE_CREDENTIALS_PATH:firebase-service-account.json}
+
+eureka:
+  client:
+    enabled: ${EUREKA_ENABLED:true}
+    service-url:
+      defaultZone: ${EUREKA_URL:http://localhost:8761/eureka/}
+  instance:
+    prefer-ip-address: true

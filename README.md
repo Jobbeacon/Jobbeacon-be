@@ -32,6 +32,8 @@ Toàn bộ cấu hình mặc định nằm ở [`src/main/resources/application.
 | `CATEGORY_CLASSIFICATION_MIN_SCORE` | `0.72` | Ngưỡng điểm cosine similarity tối thiểu để chọn category |
 | `CATEGORY_CLASSIFICATION_MIN_MARGIN` | `0.03` | Ngưỡng chênh lệch điểm tối thiểu giữa Top 1 và Top 2 |
 | `PORT` | `8080` | Cổng HTTP server |
+| `EUREKA_URL` | `http://localhost:8761/eureka/` | Discovery server (`../Jobbeacon-discovery`); BE đăng ký với tên `jobbeacon-be`, recommendation gọi BE qua tên này |
+| `EUREKA_ENABLED` | `true` | Tắt để chạy BE không cần discovery |
 
 ## Cài đặt & chạy
 

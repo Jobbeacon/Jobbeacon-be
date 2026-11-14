@@ -1,4 +1,4 @@
-package com.jobbeacon.internal;
+package com.jobbeacon.controller.internal;
 
 import com.jobbeacon.dto.internal.InternalUserResponse;
 import com.jobbeacon.exception.base.NotFoundException;
