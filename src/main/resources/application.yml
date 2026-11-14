@@ -54,8 +54,7 @@ app:
   rabbitmq:
     job-posting:
       queue: job-posting.parsed
-  cors:
-    allowed-origins: ${CORS_ORIGINS:http://localhost:5173}
+  internal-secret: ${GATEWAY_INTERNAL_SECRET:}
   gemini:
     api-key: ${GEMINI_API_KEY:}
     embedding-model: ${GEMINI_EMBEDDING_MODEL:gemini-embedding-2}
@@ -108,9 +107,3 @@ server:
 logging:
   level:
     com.jobbeacon: INFO
-
-auth:
-  provider: firebase
-
-firebase:
-  credentials-path: ${FIREBASE_CREDENTIALS_PATH:firebase-service-account.json}

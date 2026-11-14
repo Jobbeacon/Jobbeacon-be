@@ -1,11 +1,12 @@
 package com.jobbeacon.security;
 
 import jakarta.servlet.DispatcherType;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.env.Environment;
+import org.springframework.core.env.Profiles;
 import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -14,37 +15,49 @@ import org.springframework.security.config.annotation.web.configurers.AbstractHt
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
-import org.springframework.web.cors.CorsConfiguration;
-import org.springframework.web.cors.CorsConfigurationSource;
-import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
-
-import java.util.Arrays;
-import java.util.List;
+import org.springframework.util.StringUtils;
 
 @Configuration
 @EnableWebSecurity
 @EnableMethodSecurity
-@Slf4j
 public class SecurityConfiguration {
 
-  private final ObjectProvider<FirebaseTokenFilter> firebaseTokenFilter;
   private final RestAuthenticationEntryPoint restAuthenticationEntryPoint;
 
-  public SecurityConfiguration(
-      ObjectProvider<FirebaseTokenFilter> firebaseTokenFilter,
-      RestAuthenticationEntryPoint restAuthenticationEntryPoint
-  ) {
-    this.firebaseTokenFilter = firebaseTokenFilter;
+  public SecurityConfiguration(RestAuthenticationEntryPoint restAuthenticationEntryPoint) {
     this.restAuthenticationEntryPoint = restAuthenticationEntryPoint;
   }
 
-  @Value("${app.cors.allowed-origins:http://localhost:5173}")
-  private String allowedOrigins;
+  @Bean
+  public GatewayHeaderAuthFilter gatewayHeaderAuthFilter(
+      @Value("${app.internal-secret:}") String internalSecret,
+      Environment environment
+  ) {
+    if (!StringUtils.hasText(internalSecret)
+        && !environment.acceptsProfiles(Profiles.of("local", "test"))) {
+      throw new IllegalStateException(
+          "app.internal-secret (GATEWAY_INTERNAL_SECRET) must be set outside local/test profiles");
+    }
+    return new GatewayHeaderAuthFilter(internalSecret, restAuthenticationEntryPoint);
+  }
 
   @Bean
-  public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+  public FilterRegistrationBean<GatewayHeaderAuthFilter> gatewayHeaderAuthFilterRegistration(
+      GatewayHeaderAuthFilter gatewayHeaderAuthFilter
+  ) {
+    FilterRegistrationBean<GatewayHeaderAuthFilter> registration =
+        new FilterRegistrationBean<>(gatewayHeaderAuthFilter);
+    registration.setEnabled(false);
+    return registration;
+  }
+
+  @Bean
+  public SecurityFilterChain securityFilterChain(
+      HttpSecurity http,
+      GatewayHeaderAuthFilter gatewayHeaderAuthFilter
+  ) throws Exception {
     http.csrf(AbstractHttpConfigurer::disable)
-        .cors(cors -> cors.configurationSource(corsConfigurationSource()))
+        .cors(AbstractHttpConfigurer::disable)
         .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
         .exceptionHandling(ex -> ex.authenticationEntryPoint(restAuthenticationEntryPoint))
         .authorizeHttpRequests(auth -> auth
@@ -56,28 +69,9 @@ public class SecurityConfiguration {
             .requestMatchers(HttpMethod.GET, "/api/v1/locations/**").permitAll()
             .requestMatchers(HttpMethod.GET, "/api/v1/categories").permitAll()
             .requestMatchers(HttpMethod.GET, "/api/v1/companies", "/api/v1/companies/**").permitAll()
-            .anyRequest().authenticated());
-
-    FirebaseTokenFilter filter = firebaseTokenFilter.getIfAvailable();
-    if (filter != null) {
-      http.addFilterBefore(filter, UsernamePasswordAuthenticationFilter.class);
-    }
+            .anyRequest().authenticated())
+        .addFilterBefore(gatewayHeaderAuthFilter, UsernamePasswordAuthenticationFilter.class);
 
     return http.build();
-  }
-
-  @Bean
-  public CorsConfigurationSource corsConfigurationSource() {
-    CorsConfiguration configuration = new CorsConfiguration();
-
-    log.info("(allowedOrigins) :{}", allowedOrigins);
-    configuration.setAllowedOrigins(Arrays.asList(allowedOrigins.split(",")));
-    configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
-    configuration.setAllowedHeaders(List.of("*"));
-    configuration.setAllowCredentials(true);
-
-    UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
-    source.registerCorsConfiguration("/**", configuration);
-    return source;
   }
 }

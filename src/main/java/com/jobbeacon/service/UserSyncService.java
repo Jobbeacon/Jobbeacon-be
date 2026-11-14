@@ -1,11 +1,11 @@
 package com.jobbeacon.service;
 
-import com.google.firebase.auth.FirebaseToken;
 import com.jobbeacon.entity.User;
+import com.jobbeacon.security.GatewayPrincipal;
 
 public interface UserSyncService {
 
-  User syncFromFirebaseToken(FirebaseToken firebaseToken);
+  User syncFromPrincipal(GatewayPrincipal principal);
 
   User getCurrentUser();
 }
