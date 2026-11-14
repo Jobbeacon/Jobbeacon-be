@@ -12,7 +12,6 @@ public final class GatewayHeaders {
   public static final String USER_EMAIL_VERIFIED = "X-User-Email-Verified";
   public static final String USER_NAME = "X-User-Name";
   public static final String USER_PICTURE = "X-User-Picture";
-  public static final String INTERNAL_SECRET = "X-Internal-Secret";
 
   private GatewayHeaders() {
   }

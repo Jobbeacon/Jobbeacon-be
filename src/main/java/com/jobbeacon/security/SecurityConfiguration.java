@@ -1,12 +1,9 @@
 package com.jobbeacon.security;
 
 import jakarta.servlet.DispatcherType;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.core.env.Environment;
-import org.springframework.core.env.Profiles;
 import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -15,7 +12,6 @@ import org.springframework.security.config.annotation.web.configurers.AbstractHt
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
-import org.springframework.util.StringUtils;
 
 @Configuration
 @EnableWebSecurity
@@ -29,16 +25,8 @@ public class SecurityConfiguration {
   }
 
   @Bean
-  public GatewayHeaderAuthFilter gatewayHeaderAuthFilter(
-      @Value("${app.internal-secret:}") String internalSecret,
-      Environment environment
-  ) {
-    if (!StringUtils.hasText(internalSecret)
-        && !environment.acceptsProfiles(Profiles.of("local", "test"))) {
-      throw new IllegalStateException(
-          "app.internal-secret (GATEWAY_INTERNAL_SECRET) must be set outside local/test profiles");
-    }
-    return new GatewayHeaderAuthFilter(internalSecret, restAuthenticationEntryPoint);
+  public GatewayHeaderAuthFilter gatewayHeaderAuthFilter() {
+    return new GatewayHeaderAuthFilter();
   }
 
   @Bean
