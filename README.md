@@ -91,7 +91,7 @@ docker build -t jobbeacon-be .
 docker run -p 8080:8080 --env-file .env jobbeacon-be
 ```
 
-Mặc định app chạy ở `http://localhost:8080`, API docs (Swagger/OpenAPI) tại `/swagger-ui.html`.
+Mặc định app chạy ở `http://localhost:8080` với context path `/jobbeacon-be`: mọi endpoint có dạng `/jobbeacon-be/api/v1/...`, API docs (Swagger/OpenAPI) tại `/jobbeacon-be/swagger-ui.html`. Từ ngoài, gọi qua gateway với cùng đường dẫn (`http://localhost:8088/jobbeacon-be/...`); `/jobbeacon-be/internal/**` chỉ dành cho service nội bộ, gateway không chuyển tới.
 
 ## Tìm kiếm job
 

@@ -102,6 +102,10 @@ app:
 
 server:
   port: ${PORT:8080}
+  servlet:
+    context-path: /jobbeacon-be
+  
+  forward-headers-strategy: framework
 
 logging:
   level:
