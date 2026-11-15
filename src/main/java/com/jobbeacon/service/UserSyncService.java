@@ -6,6 +6,4 @@ import com.jobbeacon.security.GatewayPrincipal;
 public interface UserSyncService {
 
   User syncFromPrincipal(GatewayPrincipal principal);
-
-  User getCurrentUser();
 }

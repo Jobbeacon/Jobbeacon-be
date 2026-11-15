@@ -6,7 +6,9 @@ import static com.jobbeacon.constant.JobBeaconConstants.CommonConstants.PERCENT;
 
 import com.jobbeacon.dto.response.Error;
 import com.jobbeacon.dto.response.ResponseGeneral;
+import com.jobbeacon.exception.base.BadRequestException;
 import com.jobbeacon.exception.base.BaseException;
+import com.jobbeacon.exception.base.UnauthorizedException;
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.ConstraintViolationException;
 import java.util.Locale;
@@ -20,6 +22,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingRequestHeaderException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.context.request.WebRequest;
@@ -29,6 +32,8 @@ import org.springframework.web.multipart.MaxUploadSizeExceededException;
 @RestControllerAdvice
 @RequiredArgsConstructor
 public class ExceptionHandlerAdvice {
+  private static final String GATEWAY_HEADER_PREFIX = "X-User-";
+
   private final MessageSource messageSource;
 
   @ExceptionHandler(value = {BaseException.class})
@@ -39,6 +44,17 @@ public class ExceptionHandlerAdvice {
     return ResponseEntity
         .status(ex.getStatus())
         .body(getError(ex.getStatus(), ex.getCode(), webRequest.getLocale(), ex.getParams()));
+  }
+
+  @ExceptionHandler(MissingRequestHeaderException.class)
+  public ResponseEntity<ResponseGeneral<Error>> handleMissingHeader(
+      MissingRequestHeaderException ex,
+      WebRequest webRequest
+  ) {
+    if (ex.getHeaderName().startsWith(GATEWAY_HEADER_PREFIX)) {
+      return handleBaseException(new UnauthorizedException(), webRequest);
+    }
+    return handleBaseException(new BadRequestException(), webRequest);
   }
 
   @ExceptionHandler(MethodArgumentNotValidException.class)
