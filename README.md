@@ -1,6 +1,6 @@
 # Jobbeacon Backend
 
-Backend service cho hệ thống Jobbeacon: thu thập, lưu trữ và phân loại tin tuyển dụng (job posting), xây dựng bằng Spring Boot 3 (Java 21) + PostgreSQL (pgvector) + RabbitMQ.
+Backend service cho hệ thống Jobbeacon: thu thập, lưu trữ và phân loại tin tuyển dụng (job posting), xây dựng bằng Spring Boot 3 (Java 21) + PostgreSQL (pgvector) + RabbitMQ. Không xác thực Firebase token: gateway (`../Jobbeacon-gateway`) làm việc đó và chuyển danh tính qua header `X-User-*`.
 
 ## Yêu cầu môi trường
 
@@ -8,7 +8,6 @@ Backend service cho hệ thống Jobbeacon: thu thập, lưu trữ và phân lo�
 - Maven 3.9+
 - PostgreSQL 16+ **có cài extension [pgvector](https://github.com/pgvector/pgvector)** (dùng image `pgvector/pgvector:pg16` nếu chạy Postgres bằng Docker — Postgres thường không có sẵn extension này)
 - RabbitMQ
-- Firebase service account (dùng cho xác thực)
 - Gemini API key (tuỳ chọn — chỉ cần nếu muốn bật tính năng tự động phân loại category cho job posting bằng embedding)
 
 ## Cấu hình (biến môi trường)
@@ -25,13 +24,14 @@ Toàn bộ cấu hình mặc định nằm ở [`src/main/resources/application.
 | `RABBITMQ_HOST` / `RABBITMQ_PORT` | `localhost` / `5672` | Kết nối RabbitMQ |
 | `RABBITMQ_USERNAME` / `RABBITMQ_PASSWORD` | `guest` / `guest` | Auth RabbitMQ |
 | `CORS_ORIGINS` | `http://localhost:5173` | Origin được phép gọi API |
-| `FIREBASE_CREDENTIALS_PATH` | `firebase-service-account.json` | Đường dẫn file service account Firebase (classpath hoặc filesystem) |
 | `GEMINI_API_KEY` | *(rỗng)* | API key Gemini — cần để tính năng phân loại category tự động hoạt động |
 | `GEMINI_EMBEDDING_MODEL` | `gemini-embedding-2` | Model embedding dùng để encode job posting |
 | `GEMINI_EMBEDDING_DIMENSION` | `1536` | Số chiều embedding (phải khớp với embedding của category) |
 | `CATEGORY_CLASSIFICATION_MIN_SCORE` | `0.72` | Ngưỡng điểm cosine similarity tối thiểu để chọn category |
 | `CATEGORY_CLASSIFICATION_MIN_MARGIN` | `0.03` | Ngưỡng chênh lệch điểm tối thiểu giữa Top 1 và Top 2 |
 | `PORT` | `8080` | Cổng HTTP server |
+| `EUREKA_URL` | `http://localhost:8761/eureka/` | Discovery server (`../Jobbeacon-discovery`); BE đăng ký với tên `jobbeacon-be`, recommendation gọi BE qua tên này |
+| `EUREKA_ENABLED` | `true` | Tắt để chạy BE không cần discovery |
 
 ## Cài đặt & chạy
 
@@ -49,11 +49,7 @@ docker run -d --name jobbeacon-db \
 
 Khi app start lần đầu, Liquibase sẽ tự chạy migration để tạo schema, bật extension `vector`, và seed sẵn cây category (chưa có embedding).
 
-### 2. Firebase credentials
-
-Đặt file `firebase-service-account.json` ở thư mục gốc repo (hoặc set `FIREBASE_CREDENTIALS_PATH` trỏ tới vị trí khác). File này **không** được commit vào git.
-
-### 3. Tải file category embeddings (bắt buộc để phân loại category hoạt động)
+### 2. Tải file category embeddings (bắt buộc để phân loại category hoạt động)
 
 Cây category đã được seed sẵn qua Liquibase, nhưng **vector embedding của từng category** không nằm trong git (file JSON ~50MB) — cần tải thủ công:
 
@@ -67,7 +63,7 @@ Khi app khởi động, [`CategoryEmbeddingInitializer`](src/main/java/com/jobbe
 
 > Nếu không cung cấp file này, app vẫn chạy bình thường nhưng tính năng tự động phân loại category cho job posting (`processJobPostingMessage`) sẽ không chọn được category nào do không có embedding để so sánh.
 
-### 4. RabbitMQ
+### 3. RabbitMQ
 
 Chạy RabbitMQ (mặc định trỏ tới `localhost:5672`, user/pass `guest`/`guest`):
 
@@ -75,7 +71,7 @@ Chạy RabbitMQ (mặc định trỏ tới `localhost:5672`, user/pass `guest`/`
 docker run -d --name jobbeacon-mq -p 5672:5672 -p 15672:15672 rabbitmq:3-management
 ```
 
-### 5. Build & chạy
+### 4. Build & chạy
 
 ```bash
 mvn clean package
@@ -95,7 +91,7 @@ docker build -t jobbeacon-be .
 docker run -p 8080:8080 --env-file .env jobbeacon-be
 ```
 
-Mặc định app chạy ở `http://localhost:8080`, API docs (Swagger/OpenAPI) tại `/swagger-ui.html`.
+Mặc định app chạy ở `http://localhost:8080` với context path `/jobbeacon-be`: mọi endpoint có dạng `/jobbeacon-be/api/v1/...`, API docs (Swagger/OpenAPI) tại `/jobbeacon-be/swagger-ui.html`. Từ ngoài, gọi qua gateway với cùng đường dẫn (`http://localhost:8088/jobbeacon-be/...`); `/jobbeacon-be/internal/**` chỉ dành cho service nội bộ, gateway không chuyển tới.
 
 ## Tìm kiếm job
 

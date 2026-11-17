@@ -3,14 +3,11 @@ package com.jobbeacon.service.impl;
 import com.jobbeacon.constant.UserStatus;
 import com.jobbeacon.entity.User;
 import com.jobbeacon.exception.BusinessException;
-import com.jobbeacon.exception.base.UnauthorizedException;
 import com.jobbeacon.repository.UserRepository;
 import com.jobbeacon.security.GatewayPrincipal;
 import com.jobbeacon.service.UserSyncService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -88,30 +85,6 @@ public class UserSyncServiceImpl implements UserSyncService {
     log.info("(syncFromPrincipal) created new user for uid: {}", firebaseUid);
 
     return newUser;
-  }
-
-  @Override
-  @Transactional
-  public User getCurrentUser() {
-    final Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-    if (auth == null) {
-      log.warn("Security check failed: Authentication object is null");
-
-      throw new UnauthorizedException("No authenticated user");
-    }
-
-    if (auth.getPrincipal() instanceof User user) {
-      return user;
-    }
-
-    final Object details = auth.getDetails();
-    if (details instanceof GatewayPrincipal principal) {
-      return this.syncFromPrincipal(principal);
-    }
-
-    log.warn("Security check failed: Authentication details is not of type GatewayPrincipal");
-
-    throw new UnauthorizedException("No gateway identity found");
   }
 
   private User updateExistingUser(

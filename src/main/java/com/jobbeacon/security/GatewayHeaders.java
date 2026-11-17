@@ -1,9 +1,5 @@
 package com.jobbeacon.security;
 
-/**
- * Identity headers attached by Jobbeacon-gateway after verifying the Firebase ID token.
- * Must stay in sync with the gateway's {@code constant/GatewayHeaders}.
- */
 public final class GatewayHeaders {
 
   public static final String USER_ID = "X-User-Id";
