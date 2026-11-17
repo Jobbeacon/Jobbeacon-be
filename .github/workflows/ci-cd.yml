@@ -23,7 +23,9 @@ jobs:
           distribution: temurin
           java-version: "21"
           cache: maven
-      - run: mvn -B test
+      # JobBeaconApplicationTests starts the whole application, which needs a running Postgres, Redis, RabbitMQ and
+      # Elasticsearch plus category_embeddings.json (not in git), so it is skipped here.
+      - run: mvn -B test '-Dtest=!JobBeaconApplicationTests'
 
   image:
     if: github.event_name == 'push'

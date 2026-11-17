@@ -10,7 +10,10 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.ClassPathResource;
+import org.springframework.core.io.FileSystemResource;
+import org.springframework.core.io.Resource;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -27,6 +30,10 @@ public class CategoryEmbeddingInitializer {
 
     private final CategoryRepository categoryRepository;
     private final ObjectMapper objectMapper;
+
+    /** File on disk to read instead of the classpath copy, which the image built by CI doesn't have. */
+    @Value("${app.category-classification.embeddings-file:}")
+    private String embeddingsFile;
 
     @EventListener(ApplicationReadyEvent.class)
     @Transactional
@@ -49,10 +56,11 @@ public class CategoryEmbeddingInitializer {
         try {
             List<CategoryEmbeddingData> embeddingData;
 
-            ClassPathResource resource =
-                    new ClassPathResource("data/category_embeddings.json");
+            Resource resource = embeddingsFile.isBlank()
+                    ? new ClassPathResource("data/category_embeddings.json")
+                    : new FileSystemResource(embeddingsFile);
             if (!resource.exists()) {
-                log.warn("Skip category embeddings: data/category_embeddings.json is not on the classpath");
+                log.warn("Skip category embeddings: {} not found", resource.getDescription());
                 return;
             }
 
