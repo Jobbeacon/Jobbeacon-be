@@ -46,6 +46,10 @@ public class JobSourceMapping {
     @Column(name = "job_url", length = 500)
     private String jobUrl;
 
+    /** See {@link com.jobbeacon.utils.SourceJobKeys}. Unique within a source; null on copies stored before it existed. */
+    @Column(name = "source_job_key", length = 500)
+    private String sourceJobKey;
+
     @Column(name = "crawled_at")
     private Instant crawledAt;
 

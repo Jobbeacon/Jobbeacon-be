@@ -2,12 +2,15 @@ package com.jobbeacon.repository;
 
 import com.jobbeacon.dto.response.JobSummaryResponse;
 import com.jobbeacon.entity.Job;
+import com.jobbeacon.repository.projection.JobPreferenceFacts;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -53,4 +56,28 @@ public interface JobRepository extends BaseRepository<Job> {
         """
     )
     Page<JobSummaryResponse> findJobsByCompanyId(@Param("companyId") UUID companyId, Pageable pageable);
+
+    /** Job cards for the recommendation service. Expired jobs are left out; the order is unspecified. */
+    @Query(
+        """
+            select new com.jobbeacon.dto.response.JobSummaryResponse(
+                j.id, j.title, c.name, j.minSalary, j.maxSalary, j.location, j.currency, c.logoUrl, j.postedDate
+            )
+            from Job j
+            left join j.company c
+            where j.id in :ids and (j.expiredDate is null or j.expiredDate > CURRENT_TIMESTAMP)
+        """
+    )
+    List<JobSummaryResponse> findActiveSummariesByIds(@Param("ids") Collection<UUID> ids);
+
+    @Query(
+        """
+            select new com.jobbeacon.repository.projection.JobPreferenceFacts(
+                j.id, j.title, j.employmentType, j.minSalary, j.maxSalary, j.currency, j.salaryPeriod
+            )
+            from Job j
+            where j.id in :ids
+        """
+    )
+    List<JobPreferenceFacts> findPreferenceFactsByIds(@Param("ids") Collection<UUID> ids);
 }

@@ -24,18 +24,23 @@ import com.jobbeacon.repository.JobLocationRepository;
 import com.jobbeacon.repository.JobElasticsearchRepository;
 import com.jobbeacon.graph.GraphSyncOutboxService;
 import com.jobbeacon.repository.JobRepository;
+import com.jobbeacon.repository.JobSourceMappingRepository;
 import com.jobbeacon.repository.JobSourceRepository;
 import com.jobbeacon.search.JobSearchOutboxService;
 import com.jobbeacon.service.CategoryClassificationService;
 import com.jobbeacon.service.JobService;
 import com.jobbeacon.service.LocationMappingService;
 import com.jobbeacon.service.SkillResolutionService;
+import com.jobbeacon.utils.SourceJobKeys;
 import com.jobbeacon.utils.UrlUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Duration;
+import java.time.Instant;
+import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -45,6 +50,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Consumer;
 
 @Slf4j
 @Service
@@ -52,12 +58,16 @@ import java.util.UUID;
 public class JobServiceImpl implements JobService {
 
     private static final String JOB_NOT_FOUND_CODE = "job_not_found";
+    private static final ZoneId VIETNAM_ZONE = ZoneId.of("Asia/Ho_Chi_Minh");
+    /** Postgres rounds timestamps to microseconds, so a redelivered message can look slightly newer than its row. */
+    private static final Duration CRAWLED_AT_PRECISION = Duration.ofMillis(1);
 
     private final JobRepository jobRepository;
     private final CompanyRepository companyRepository;
     private final SkillResolutionService skillResolutionService;
     private final CategoryClassificationService categoryClassificationService;
     private final JobSourceRepository jobSourceRepository;
+    private final JobSourceMappingRepository jobSourceMappingRepository;
     private final LocationMappingService locationMappingService;
     private final JobLocationRepository jobLocationRepository;
     private final JobSearchOutboxService jobSearchOutboxService;
@@ -70,17 +80,6 @@ public class JobServiceImpl implements JobService {
     public void processJobPostingMessage(JobPostingMessage message) {
         log.info("Processing job posting message: {}", message.getTitle());
 
-        Company company = null;
-        if (message.getCompanyName() != null && !message.getCompanyName().trim().isEmpty()) {
-            company = companyRepository.findByNameIgnoreCase(message.getCompanyName().trim())
-                    .orElseGet(() -> {
-                        Company newCompany = new Company();
-                        newCompany.setName(message.getCompanyName().trim());
-                        newCompany.setLogoUrl(message.getCompanyLogoUrl());
-                        return companyRepository.save(newCompany);
-                    });
-        }
-
         String domain = UrlUtils.extractDomain(message.getUrl());
         JobSource jobSource = null;
         if (domain != null) {
@@ -89,6 +88,28 @@ public class JobServiceImpl implements JobService {
                         JobSource newSource = new JobSource();
                         newSource.setDomain(domain);
                         return jobSourceRepository.save(newSource);
+                    });
+        }
+
+        // The same posting arrives more than once: crawled again, found under another url, or redelivered by RabbitMQ.
+        String sourceJobKey = SourceJobKeys.from(message.getUrl());
+        JobSourceMapping known = jobSource == null || sourceJobKey == null
+                ? null
+                : jobSourceMappingRepository.findBySourceJobKey(jobSource.getId(), sourceJobKey).orElse(null);
+        Instant crawledAt = toInstant(message.getCrawledAt());
+        if (known != null && !isNewer(crawledAt, known.getCrawledAt())) {
+            log.info("Skip job posting already processed: {}", message.getUrl());
+            return;
+        }
+
+        Company company = null;
+        if (message.getCompanyName() != null && !message.getCompanyName().trim().isEmpty()) {
+            company = companyRepository.findByNameIgnoreCase(message.getCompanyName().trim())
+                    .orElseGet(() -> {
+                        Company newCompany = new Company();
+                        newCompany.setName(message.getCompanyName().trim());
+                        newCompany.setLogoUrl(message.getCompanyLogoUrl());
+                        return companyRepository.save(newCompany);
                     });
         }
 
@@ -114,57 +135,99 @@ public class JobServiceImpl implements JobService {
             locations.add(mapped.display());
         }
 
-        Job job = new Job();
-        job.setCompany(company);
-        job.setTitle(message.getTitle());
-        job.setDescription(message.getDescription());
-        job.setExperienceMonths(message.getExperienceMonths());
-        job.setEmploymentType(message.getEmploymentType());
-
-        if (message.getPostedDate() != null) {
-            job.setPostedDate(message.getPostedDate().atZone(ZoneId.of("Asia/Ho_Chi_Minh")).toInstant());
+        boolean isNew = known == null;
+        Job job = isNew ? new Job() : known.getJob();
+        applyPosting(job, message, isNew);
+        // As with the fields, an update that found none of these keeps what the job has.
+        if (isNew || company != null) {
+            job.setCompany(company);
         }
-        if (message.getExpiredDate() != null) {
-            job.setExpiredDate(message.getExpiredDate().atZone(ZoneId.of("Asia/Ho_Chi_Minh")).toInstant());
+        if (isNew || !locations.isEmpty()) {
+            job.setLocation(locations);
         }
-
-        job.setMinSalary(message.getMinSalary());
-        job.setMaxSalary(message.getMaxSalary());
-        job.setCurrency(message.getCurrency());
-        job.setSalaryPeriod(message.getSalaryPeriod());
-        job.setLocation(locations);
-        job.setBenefits(message.getBenefits());
-
-        job.setSkills(skills);
-        job.setCategories(categories);
+        if (isNew || !skills.isEmpty()) {
+            job.setSkills(skills);
+        }
+        if (isNew || !categories.isEmpty()) {
+            job.setCategories(categories);
+        }
 
         job = jobRepository.save(job);
-        List<JobLocation> jobLocations = new ArrayList<>();
-        for (int i = 0; i < mappedLocations.size(); i++) {
-            LocationMappingService.MappedLocation mapped = mappedLocations.get(i);
-            JobLocation jobLocation = new JobLocation();
-            jobLocation.setJob(job);
-            jobLocation.setRawLocation(rawLocations.get(i));
-            jobLocation.setProvince(mapped.province());
-            jobLocation.setWard(mapped.ward());
-            jobLocations.add(jobLocationRepository.save(jobLocation));
+        List<JobLocation> jobLocations;
+        if (!isNew && mappedLocations.isEmpty()) {
+            jobLocations = jobLocationRepository.findByJobId(job.getId());
+        } else {
+            if (!isNew) {
+                jobLocationRepository.deleteByJobId(job.getId());
+            }
+            jobLocations = new ArrayList<>();
+            for (int i = 0; i < mappedLocations.size(); i++) {
+                LocationMappingService.MappedLocation mapped = mappedLocations.get(i);
+                JobLocation jobLocation = new JobLocation();
+                jobLocation.setJob(job);
+                jobLocation.setRawLocation(rawLocations.get(i));
+                jobLocation.setProvince(mapped.province());
+                jobLocation.setWard(mapped.ward());
+                jobLocations.add(jobLocationRepository.save(jobLocation));
+            }
         }
 
-        if (jobSource != null) {
-            JobSourceMapping mapping = new JobSourceMapping();
-            mapping.setJob(job);
-            mapping.setSource(jobSource);
-            mapping.setJobUrl(message.getUrl());
-            if (message.getCrawledAt() != null) {
-                mapping.setCrawledAt(message.getCrawledAt().atZone(ZoneId.of("Asia/Ho_Chi_Minh")).toInstant());
+        if (!isNew) {
+            known.setJobUrl(message.getUrl());
+            known.setCrawledAt(crawledAt);
+            jobSearchOutboxService.updated(job, jobLocations);
+        } else {
+            if (jobSource != null) {
+                JobSourceMapping mapping = new JobSourceMapping();
+                mapping.setJob(job);
+                mapping.setSource(jobSource);
+                mapping.setJobUrl(message.getUrl());
+                mapping.setSourceJobKey(sourceJobKey);
+                mapping.setCrawledAt(crawledAt);
+                // Cascade from Job persists this row. Saving it here as well calls merge()
+                // because the embedded id is already non-null, then the collection flush
+                // persists a second instance with the same id.
+                job.getJobSourceMappings().add(mapping);
             }
-            // Cascade from Job persists this row. Saving it here as well calls merge()
-            // because the embedded id is already non-null, then the collection flush
-            // persists a second instance with the same id.
-            job.getJobSourceMappings().add(mapping);
+            jobSearchOutboxService.created(job, jobLocations);
         }
-        jobSearchOutboxService.created(job, jobLocations);
         graphSyncOutboxService.jobChanged(job.getId());
+    }
+
+    /**
+     * Copies the posting onto the job. On an update a value the crawler did not find keeps the old one: a page it could
+     * only partly read must not wipe what an earlier crawl got.
+     */
+    private static void applyPosting(Job job, JobPostingMessage message, boolean isNew) {
+        setIfFound(message.getTitle(), job::setTitle);
+        setIfFound(message.getDescription(), job::setDescription);
+        setIfFound(message.getEmploymentType(), job::setEmploymentType);
+        setIfFound(toInstant(message.getPostedDate()), job::setPostedDate);
+        setIfFound(toInstant(message.getExpiredDate()), job::setExpiredDate);
+        setIfFound(message.getMinSalary(), job::setMinSalary);
+        setIfFound(message.getMaxSalary(), job::setMaxSalary);
+        setIfFound(message.getCurrency(), job::setCurrency);
+        setIfFound(message.getSalaryPeriod(), job::setSalaryPeriod);
+        setIfFound(message.getBenefits(), job::setBenefits);
+        // 0 is what the crawler sends when it found no experience requirement.
+        if (isNew || message.getExperienceMonths() > 0) {
+            job.setExperienceMonths(message.getExperienceMonths());
+        }
+    }
+
+    private static <T> void setIfFound(T value, Consumer<T> setter) {
+        if (value != null && !(value instanceof String text && text.isBlank())) {
+            setter.accept(value);
+        }
+    }
+
+    private static Instant toInstant(LocalDateTime value) {
+        return value == null ? null : value.atZone(VIETNAM_ZONE).toInstant();
+    }
+
+    /** Without both times there is nothing to compare, so a message without one only ever adds a job. */
+    private static boolean isNewer(Instant crawledAt, Instant storedAt) {
+        return crawledAt != null && (storedAt == null || crawledAt.isAfter(storedAt.plus(CRAWLED_AT_PRECISION)));
     }
 
     @Override
