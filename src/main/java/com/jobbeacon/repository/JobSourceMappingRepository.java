@@ -9,6 +9,7 @@ import org.springframework.stereotype.Repository;
 
 import java.util.Collection;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 @Repository
@@ -25,4 +26,7 @@ public interface JobSourceMappingRepository extends JpaRepository<JobSourceMappi
         """
     )
     List<CompanySource> getSourcesByCompanyIds(@Param("companyIds") Collection<UUID> companyIds);
+
+    @Query("select m from JobSourceMapping m join fetch m.job where m.source.id = :sourceId and m.sourceJobKey = :key")
+    Optional<JobSourceMapping> findBySourceJobKey(@Param("sourceId") UUID sourceId, @Param("key") String key);
 }
