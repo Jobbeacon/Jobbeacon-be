@@ -120,6 +120,15 @@ server:
   
   forward-headers-strategy: framework
 
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,prometheus
+  endpoint:
+    health:
+      show-details: never
+
 logging:
   level:
     com.jobbeacon: INFO
