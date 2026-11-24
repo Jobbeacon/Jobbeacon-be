@@ -1,12 +1,15 @@
 package com.jobbeacon.internal;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.tuple;
 
 import com.jobbeacon.constant.SalaryCurrency;
 import com.jobbeacon.dto.internal.InternalRecommendationContextResponse;
+import com.jobbeacon.dto.internal.InternalRecommendationContextResponse.CvTitle;
 import com.jobbeacon.dto.internal.InternalRecommendationContextResponse.PreferenceMatch;
 import com.jobbeacon.entity.Province;
 import com.jobbeacon.entity.UserJobPreference;
+import com.jobbeacon.repository.TitleMatchRepository;
 import com.jobbeacon.repository.UserJobPreferenceRepository;
 import jakarta.persistence.EntityManager;
 import java.util.List;
@@ -28,7 +31,7 @@ import org.testcontainers.utility.DockerImageName;
 
 @DataJpaTest
 @Testcontainers
-@Import(InternalRecommendationService.class)
+@Import({InternalRecommendationService.class, TitleMatchRepository.class})
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 class InternalRecommendationServiceIT {
 
@@ -89,8 +92,8 @@ class InternalRecommendationServiceIT {
     location(misfits, otherProvince);
 
     assertThat(service.context(user, List.of(fits, misfits)).matches()).containsExactlyInAnyOrder(
-        new PreferenceMatch(fits, true, true, true, true),
-        new PreferenceMatch(misfits, false, false, false, false));
+        new PreferenceMatch(fits, true, true, true, true, null, null),
+        new PreferenceMatch(misfits, false, false, false, false, null, null));
   }
 
   @Test
@@ -99,7 +102,7 @@ class InternalRecommendationServiceIT {
     UUID silent = job("Kế toán", "ONLINE_JOBS", null, null);
 
     assertThat(service.context(user, List.of(silent)).matches())
-        .containsExactly(new PreferenceMatch(silent, false, null, null, null));
+        .containsExactly(new PreferenceMatch(silent, false, null, null, null, null, null));
   }
 
   @Test
@@ -121,6 +124,69 @@ class InternalRecommendationServiceIT {
 
     assertThat(service.context(user, List.of(low, otherCurrency)).matches())
         .extracting(PreferenceMatch::salary).containsOnlyNulls();
+  }
+
+  @Test
+  void cvTitlesStandInWhileTheUserHasNoPreference() {
+    cv();
+    UUID current = job("Java Backend Developer", "FULL_TIME", null, null);
+    UUID past = job("Automation Tester", "FULL_TIME", null, null);
+    UUID neither = job("Kế toán", "FULL_TIME", null, null);
+
+    assertThat(service.context(user, List.of(current, past, neither)).matches()).containsExactlyInAnyOrder(
+        new PreferenceMatch(current, null, null, null, null, CvTitle.CURRENT, null),
+        new PreferenceMatch(past, null, null, null, null, CvTitle.PAST, null),
+        new PreferenceMatch(neither, null, null, null, null, null, null));
+    assertThat(service.titles(user))
+        .isEqualTo(new UserTitles(List.of(), List.of("Backend Developer"), List.of("Tester")));
+  }
+
+  @Test
+  void aDesiredTitleReplacesTheCvTitles() {
+    cv();
+    preference(false);
+    UUID job = job("Java Backend Developer", null, null, null);
+
+    PreferenceMatch match = service.context(user, List.of(job)).matches().get(0);
+
+    assertThat(match.title()).isFalse();
+    assertThat(match.cvTitle()).isNull();
+  }
+
+  @Test
+  void aTitleOfTheSameOccupationMatchesToo() {
+    cv();
+    UUID sameOccupation = job("Kỹ sư Backend", null, null, null);
+    UUID unrelated = job("Kế toán", null, null, null);
+    jdbc.update("insert into title_embedding (title_key, title) values ('backend developer', 'x'), ('kỹ sư backend', 'x'), "
+        + "('kế toán', 'x')");
+    jdbc.update("insert into title_match (user_title_key, job_title_key, matches) values "
+        + "('backend developer', 'kỹ sư backend', true), ('backend developer', 'kế toán', false)");
+
+    assertThat(service.context(user, List.of(sameOccupation, unrelated)).matches()).containsExactlyInAnyOrder(
+        new PreferenceMatch(sameOccupation, null, null, null, null, CvTitle.CURRENT, null),
+        new PreferenceMatch(unrelated, null, null, null, null, null, null));
+  }
+
+  @Test
+  void experienceIsOnlyComparedWhenBothSidesAreKnown() {
+    jdbc.update("insert into cv_profile (id, user_id, total_months_experience) values (?, ?, 24)", UUID.randomUUID(), user);
+    UUID more = job("a", null, null, null);
+    UUID less = job("b", null, null, null);
+    UUID unstated = job("c", null, null, null);
+    jdbc.update("update job set experience_months = 60 where id = ?", more);
+    jdbc.update("update job set experience_months = 12 where id = ?", less);
+    jdbc.update("update job set experience_months = 0 where id = ?", unstated);
+
+    assertThat(service.context(user, List.of(more, less, unstated)).matches())
+        .extracting(PreferenceMatch::jobId, PreferenceMatch::missingExperienceMonths)
+        .containsExactlyInAnyOrder(tuple(more, 36), tuple(less, 0), tuple(unstated, null));
+  }
+
+  private void cv() {
+    jdbc.update("insert into cv_profile (id, user_id, current_title, experiences) values (?, ?, ?, ?::jsonb)",
+        UUID.randomUUID(), user, "Senior Backend Developer",
+        "[{\"title\": \"Junior Tester\", \"endDate\": \"2022-01\", \"current\": false}]");
   }
 
   private void preference(boolean negotiable) {
