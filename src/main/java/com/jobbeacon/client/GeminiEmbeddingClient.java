@@ -34,8 +34,9 @@ public class GeminiEmbeddingClient {
                 .outputDimensionality(embeddingDimension)
                 .build();
 
-        List<Float> values = retryExecutor.execute("embedContent(" + embeddingModel + ")",
-                client -> extractValues(client.models.embedContent(embeddingModel, text, config)));
+        // Only the key changes on failure: vectors of different models cannot be compared.
+        List<Float> values = retryExecutor.execute("embedContent", List.of(embeddingModel),
+                (client, model) -> extractValues(client.models.embedContent(model, text, config)));
 
         float[] result = new float[values.size()];
         for (int i = 0; i < values.size(); i++) {

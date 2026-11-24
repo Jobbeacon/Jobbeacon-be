@@ -1,11 +1,14 @@
 package com.jobbeacon.client;
 
 import com.google.genai.Client;
+import com.google.genai.types.HttpOptions;
+import com.google.genai.types.HttpRetryOptions;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
+import java.time.Duration;
 import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -16,6 +19,9 @@ public class GeminiClientPool {
 
     @Value("${app.gemini.api-key:}")
     private String apiKeys;
+
+    @Value("${app.gemini.request-timeout:30s}")
+    private Duration requestTimeout;
 
     private List<Client> clients = List.of();
 
@@ -33,8 +39,14 @@ public class GeminiClientPool {
             return;
         }
 
+        // The SDK waits forever by default: one request Gemini never answers would block the RabbitMQ listener for good.
+        HttpOptions httpOptions = HttpOptions.builder()
+                .timeout(Math.toIntExact(requestTimeout.toMillis()))
+                // GeminiRetryExecutor does the retrying; the SDK would add its own 5 attempts under each of those.
+                .retryOptions(HttpRetryOptions.builder().attempts(1).build())
+                .build();
         this.clients = keys.stream()
-                .map(key -> Client.builder().apiKey(key).build())
+                .map(key -> Client.builder().apiKey(key).httpOptions(httpOptions).build())
                 .toList();
         log.info("Loaded {} Gemini API key(s)", clients.size());
     }
