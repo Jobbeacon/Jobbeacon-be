@@ -25,11 +25,11 @@ public interface UserSavedJobRepository extends JpaRepository<UserSavedJob, User
           """,
       nativeQuery = true
   )
-  void saveIfAbsent(@Param("userId") UUID userId, @Param("jobId") UUID jobId);
+  int saveIfAbsent(@Param("userId") UUID userId, @Param("jobId") UUID jobId);
 
   @Modifying
   @Query("delete from UserSavedJob s where s.id.userId = :userId and s.id.jobId = :jobId")
-  void deleteByUserIdAndJobId(@Param("userId") UUID userId, @Param("jobId") UUID jobId);
+  int deleteByUserIdAndJobId(@Param("userId") UUID userId, @Param("jobId") UUID jobId);
 
   @Query("select s.id.jobId from UserSavedJob s where s.id.userId = :userId order by s.createdAt desc")
   List<UUID> findJobIdsByUserId(@Param("userId") UUID userId);

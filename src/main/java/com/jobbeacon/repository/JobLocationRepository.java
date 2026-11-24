@@ -3,6 +3,7 @@ package com.jobbeacon.repository;
 import com.jobbeacon.entity.JobLocation;
 import com.jobbeacon.repository.projection.CompanyProvince;
 import com.jobbeacon.repository.projection.CompanySource;
+import com.jobbeacon.repository.projection.JobProvince;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -25,7 +26,19 @@ public interface JobLocationRepository extends BaseRepository<JobLocation> {
     )
     List<CompanyProvince> getProvincesNameByCompanyIds(@Param("companyIds") Collection<UUID> companyIds);
 
-    @Modifying(flushAutomatically = true)
+    @Query("select jl from JobLocation jl left join fetch jl.province where jl.job.id = :jobId")
+    List<JobLocation> findByJobId(@Param("jobId") UUID jobId);
+
+    @Query(
+        """
+            select distinct new com.jobbeacon.repository.projection.JobProvince(jl.job.id, jl.province.id)
+            from JobLocation jl
+            where jl.job.id in :jobIds and jl.province is not null
+        """
+    )
+    List<JobProvince> findProvincesByJobIds(@Param("jobIds") Collection<UUID> jobIds);
+
+    @Modifying
     @Query("delete from JobLocation jl where jl.job.id = :jobId")
-    int deleteByJobId(@Param("jobId") UUID jobId);
+    void deleteByJobId(@Param("jobId") UUID jobId);
 }

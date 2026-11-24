@@ -1,19 +1,15 @@
 package com.jobbeacon.service.impl;
 
-import com.google.firebase.auth.FirebaseToken;
 import com.jobbeacon.constant.UserRole;
 import com.jobbeacon.constant.UserStatus;
 import com.jobbeacon.entity.User;
 import com.jobbeacon.exception.BusinessException;
-import com.jobbeacon.exception.base.ForbiddenException;
-import com.jobbeacon.exception.base.UnauthorizedException;
 import com.jobbeacon.repository.UserRepository;
+import com.jobbeacon.security.GatewayPrincipal;
 import com.jobbeacon.service.UserSyncService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -44,13 +40,13 @@ public class UserSyncServiceImpl implements UserSyncService {
 
   @Override
   @Transactional
-  public User syncFromFirebaseToken(final FirebaseToken firebaseToken) {
-    log.info("(syncFromFirebaseToken) user: {}", firebaseToken.getEmail());
+  public User syncFromPrincipal(final GatewayPrincipal principal) {
+    log.info("(syncFromPrincipal) uid: {}", principal.uid());
 
-    final String firebaseUid = firebaseToken.getUid();
-    final String email = firebaseToken.getEmail();
-    final String picture = firebaseToken.getPicture();
-    String name = firebaseToken.getName();
+    final String firebaseUid = principal.uid();
+    final String email = principal.email();
+    final String picture = principal.picture();
+    String name = principal.name();
     if (name == null || name.isBlank()) {
       name = email != null ? email.split("@")[0] : "User";
     }
@@ -73,23 +69,20 @@ public class UserSyncServiceImpl implements UserSyncService {
         final User existingUser = byEmail.get();
 
         // Prevent Pre-Authentication Account Takeover
-        if (!firebaseToken.isEmailVerified()) {
-          log.warn("Security check failed: Email {} is not verified in Firebase", email);
+        if (!principal.emailVerified()) {
+          log.warn("(syncFromPrincipal) email not verified, refusing to link uid: {}", firebaseUid);
 
           throw new BusinessException("EMAIL_NOT_VERIFIED", "Email must be verified to link with an existing account");
         }
 
         if (existingUser.getFirebaseUid() != null) {
-          log.warn("Security check failed: Email {} is already linked to another Firebase UID {}",
-              email,
-              existingUser.getFirebaseUid()
-          );
+          log.warn("(syncFromPrincipal) email already linked to another uid, refusing to link uid: {}", firebaseUid);
 
           throw new BusinessException("EMAIL_ALREADY_IN_USE", "Email already registered with another provider/account");
         }
         // Link this Firebase UID to existing user
         existingUser.setFirebaseUid(firebaseUid);
-        log.info("Linked Firebase UID {} to existing user: {}", firebaseUid, email);
+        log.info("(syncFromPrincipal) linked uid {} to existing user: {}", firebaseUid, existingUser.getId());
 
         return this.updateExistingUser(existingUser, email, finalName, picture);
       }
@@ -107,33 +100,9 @@ public class UserSyncServiceImpl implements UserSyncService {
         .lastLoginAt(Instant.now())
         .build();
     newUser = this.userRepository.save(newUser);
-    log.info("Created new user from Firebase: {}", newUser.getEmail());
+    log.info("(syncFromPrincipal) created new user for uid: {}", firebaseUid);
 
     return newUser;
-  }
-
-  @Override
-  @Transactional
-  public User getCurrentUser() {
-    final Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-    if (auth == null) {
-      log.warn("Security check failed: Authentication object is null");
-
-      throw new UnauthorizedException("No authenticated user");
-    }
-
-    if (auth.getPrincipal() instanceof User user) {
-      return this.requireActive(user);
-    }
-
-    final Object details = auth.getDetails();
-    if (details instanceof FirebaseToken firebaseToken) {
-      return this.requireActive(this.syncFromFirebaseToken(firebaseToken));
-    }
-
-    log.warn("Security check failed: Authentication object is not of type FirebaseToken");
-
-    throw new UnauthorizedException("No Firebase authentication token found");
   }
 
   private User updateExistingUser(
@@ -154,23 +123,12 @@ public class UserSyncServiceImpl implements UserSyncService {
       user.setRole(UserRole.ADMIN);
       log.info("Promoted bootstrap admin: {}", user.getEmail());
     }
-    log.debug("Updated existing user (Firebase): {}", user.getEmail());
+    log.debug("(updateExistingUser) updated user: {}", user.getId());
 
     return this.userRepository.save(user);
   }
 
   private boolean isBootstrapAdmin(final String email) {
     return email != null && this.adminEmails.contains(email.trim().toLowerCase(Locale.ROOT));
-  }
-
-  /** Suspended or deleted accounts keep their Firebase login but may not use the API. */
-  private User requireActive(final User user) {
-    if (user.getStatus() == UserStatus.SUSPENDED) {
-      throw new ForbiddenException("user_suspended");
-    }
-    if (user.getStatus() == UserStatus.DELETED) {
-      throw new ForbiddenException("user_deleted");
-    }
-    return user;
   }
 }
