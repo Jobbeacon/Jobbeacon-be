@@ -2,7 +2,7 @@ package com.jobbeacon.repository.projection;
 
 import java.util.UUID;
 
-/** The parts of a job that are compared with a user's job preference. */
+/** The parts of a job that are compared with a user's job preference and CV. */
 public record JobPreferenceFacts(
         UUID jobId,
         String title,
@@ -10,6 +10,7 @@ public record JobPreferenceFacts(
         Long minSalary,
         Long maxSalary,
         String currency,
-        String salaryPeriod
+        String salaryPeriod,
+        Integer experienceMonths
 ) {
 }
