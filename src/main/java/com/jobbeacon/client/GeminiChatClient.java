@@ -12,7 +12,6 @@ import com.google.genai.types.GenerateContentResponse;
 import com.google.genai.types.HttpOptions;
 import com.google.genai.types.HttpRetryOptions;
 import com.google.genai.types.Part;
-import com.google.genai.types.ThinkingConfig;
 import com.google.genai.types.ThinkingLevel;
 import com.google.genai.types.Tool;
 import com.google.genai.types.ToolConfig;
@@ -37,8 +36,9 @@ public class GeminiChatClient {
 
     private static final String JSON_MIME_TYPE = "application/json";
 
-    @Value("${app.gemini.chat-model}")
-    private String chatModel;
+    /** Best first. */
+    @Value("${app.gemini.chat-models}")
+    private List<String> chatModels;
 
     @Value("${app.chat.max-output-tokens:1500}")
     private int maxOutputTokens;
@@ -65,14 +65,16 @@ public class GeminiChatClient {
 
     private GeminiRetryPolicy chatRetryPolicy;
 
-    private ThinkingConfig chatThinkingConfig;
+    private ThinkingLevel.Known chatThinkingLevel;
+
+    private Integer chatThinkingBudget;
 
     @PostConstruct
     void init() {
-        this.chatRetryPolicy = new GeminiRetryPolicy(retryMaxRetries, retryInitialDelayMs, retryMultiplier, true);
-        this.chatThinkingConfig = buildThinkingConfig();
-        log.info("(init) chatModel: {}, maxOutputTokens: {}, requestTimeout: {}, thinking: {}",
-                chatModel, maxOutputTokens, requestTimeout, chatThinkingConfig);
+        this.chatRetryPolicy = new GeminiRetryPolicy(retryMaxRetries, retryInitialDelayMs, retryMultiplier);
+        initThinking();
+        log.info("(init) chatModels: {}, maxOutputTokens: {}, requestTimeout: {}, thinkingLevel: {}, thinkingBudget: {}",
+                chatModels, maxOutputTokens, requestTimeout, chatThinkingLevel, chatThinkingBudget);
     }
 
     public String generateJson(String systemPrompt, String userPrompt) {
@@ -88,8 +90,8 @@ public class GeminiChatClient {
         }
 
         GenerateContentConfig config = configBuilder.build();
-        return retryExecutor.execute("generateContent(" + chatModel + ")",
-                client -> extractText(client.models.generateContent(chatModel, userPrompt, config)));
+        return retryExecutor.execute("generateContent", chatModels,
+                (client, model) -> extractText(client.models.generateContent(model, userPrompt, config)));
     }
 
     public GenerateContentResponse generateWithTools(String systemPrompt, List<Content> contents, List<Tool> tools) {
@@ -107,15 +109,15 @@ public class GeminiChatClient {
             throw new IllegalArgumentException("Cannot generate content from empty conversation");
         }
 
-        String operation = "generateContent(" + chatModel + ", tools" + (allowTools ? "" : ", mode=NONE") + ")";
-        return retryExecutor.execute(operation, chatRetryPolicy, deadline,
-                client -> client.models.generateContent(chatModel, contents,
-                        buildToolsConfig(systemPrompt, tools, allowTools, deadline)));
+        String operation = "generateContent(tools" + (allowTools ? "" : ", mode=NONE") + ")";
+        return retryExecutor.execute(operation, chatModels, chatRetryPolicy, deadline,
+                (client, model) -> client.models.generateContent(model, contents,
+                        buildToolsConfig(model, systemPrompt, tools, allowTools, deadline)));
     }
 
     /**
      * Opens a streaming generation with the same config as {@link #generateWithTools}.
-     * Retry and key rotation (chat policy, bounded by {@code deadline}) only cover opening the stream:
+     * Retry, key and model rotation (chat policy, bounded by {@code deadline}) only cover opening the stream:
      * the HTTP response status and the first chunk are read inside the retry executor, so 429/5xx,
      * connection errors, an error event as first chunk or an empty stream are retried there.
      * Errors while iterating later chunks are thrown to the caller as-is.
@@ -128,13 +130,14 @@ public class GeminiChatClient {
             throw new IllegalArgumentException("Cannot generate content from empty conversation");
         }
 
-        String operation = "generateContentStream(" + chatModel + ", tools" + (allowTools ? "" : ", mode=NONE") + ")";
-        return retryExecutor.execute(operation, chatRetryPolicy, deadline,
-                client -> openStream(client, contents, buildToolsConfig(systemPrompt, tools, allowTools, deadline)));
+        String operation = "generateContentStream(tools" + (allowTools ? "" : ", mode=NONE") + ")";
+        return retryExecutor.execute(operation, chatModels, chatRetryPolicy, deadline,
+                (client, model) -> openStream(client, model, contents,
+                        buildToolsConfig(model, systemPrompt, tools, allowTools, deadline)));
     }
 
-    private ChatStream openStream(Client client, List<Content> contents, GenerateContentConfig config) {
-        ResponseStream<GenerateContentResponse> stream = client.models.generateContentStream(chatModel, contents, config);
+    private ChatStream openStream(Client client, String model, List<Content> contents, GenerateContentConfig config) {
+        ResponseStream<GenerateContentResponse> stream = client.models.generateContentStream(model, contents, config);
         try {
             Iterator<GenerateContentResponse> iterator = stream.iterator();
             if (!iterator.hasNext()) {
@@ -159,7 +162,7 @@ public class GeminiChatClient {
         return chatRetryPolicy;
     }
 
-    GenerateContentConfig buildToolsConfig(String systemPrompt, List<Tool> tools, boolean allowTools,
+    GenerateContentConfig buildToolsConfig(String model, String systemPrompt, List<Tool> tools, boolean allowTools,
                                            Instant deadline) {
         GenerateContentConfig.Builder configBuilder = GenerateContentConfig.builder()
                 .temperature(0.3f)
@@ -175,9 +178,7 @@ public class GeminiChatClient {
                     .functionCallingConfig(FunctionCallingConfig.builder()
                             .mode(FunctionCallingConfigMode.Known.NONE)));
         }
-        if (chatThinkingConfig != null) {
-            configBuilder.thinkingConfig(chatThinkingConfig);
-        }
+        GeminiThinking.forModel(model, chatThinkingLevel, chatThinkingBudget).ifPresent(configBuilder::thinkingConfig);
         if (systemPrompt != null && !systemPrompt.isBlank()) {
             configBuilder.systemInstruction(Content.fromParts(Part.fromText(systemPrompt)));
         }
@@ -193,7 +194,7 @@ public class GeminiChatClient {
         return Math.toIntExact(timeoutMs);
     }
 
-    private ThinkingConfig buildThinkingConfig() {
+    private void initThinking() {
         boolean hasLevel = thinkingLevel != null && !thinkingLevel.isBlank();
         boolean hasBudget = thinkingBudget != null && !thinkingBudget.isBlank();
         if (hasLevel) {
@@ -201,13 +202,10 @@ public class GeminiChatClient {
                 log.warn("(buildThinkingConfig) both app.chat.thinking-level and app.chat.thinking-budget are set; "
                         + "using thinking-level only");
             }
-            ThinkingLevel.Known level = ThinkingLevel.Known.valueOf(thinkingLevel.trim().toUpperCase(Locale.ROOT));
-            return ThinkingConfig.builder().thinkingLevel(level).build();
+            this.chatThinkingLevel = ThinkingLevel.Known.valueOf(thinkingLevel.trim().toUpperCase(Locale.ROOT));
+        } else if (hasBudget) {
+            this.chatThinkingBudget = Integer.parseInt(thinkingBudget.trim());
         }
-        if (hasBudget) {
-            return ThinkingConfig.builder().thinkingBudget(Integer.parseInt(thinkingBudget.trim())).build();
-        }
-        return null;
     }
 
     private String extractText(GenerateContentResponse response) {

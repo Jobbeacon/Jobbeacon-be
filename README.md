@@ -23,9 +23,13 @@ Toàn bộ cấu hình mặc định nằm ở [`src/main/resources/application.
 | `LIQUIBASE_ENABLED` | `true` | Bật/tắt chạy migration Liquibase khi start |
 | `RABBITMQ_HOST` / `RABBITMQ_PORT` | `localhost` / `5672` | Kết nối RabbitMQ |
 | `RABBITMQ_USERNAME` / `RABBITMQ_PASSWORD` | `guest` / `guest` | Auth RabbitMQ |
+| `RABBITMQ_PREFETCH` | `5` | Số message RabbitMQ giao trước cho BE. Đặt quá cao thì message chờ lâu hơn 30 phút và RabbitMQ đóng channel |
 | `CORS_ORIGINS` | `http://localhost:5173` | Origin được phép gọi API |
 | `GEMINI_API_KEY` | *(rỗng)* | API key Gemini — cần để tính năng phân loại category tự động hoạt động |
 | `GEMINI_EMBEDDING_MODEL` | `gemini-embedding-2` | Model embedding dùng để encode job posting |
+| `GEMINI_CHAT_MODELS` | `gemini-3.5-flash-lite,gemini-3.1-flash-lite,gemma-4-26b-a4b-it,gemma-4-31b-it` | Model LLM, tốt nhất đứng trước. Lỗi hoặc hết quota thì xoay hết key rồi mới sang model sau |
+| `GEMINI_TOTAL_TIMEOUT` | `90s` | Sau thời gian này, tác vụ nền không thử thêm model hay key nào |
+| `GEMINI_REQUEST_TIMEOUT` | `30s` | Thời gian chờ tối đa của một request Gemini (chat và đọc CV có timeout riêng) |
 | `GEMINI_EMBEDDING_DIMENSION` | `1536` | Số chiều embedding (phải khớp với embedding của category) |
 | `CATEGORY_CLASSIFICATION_MIN_SCORE` | `0.72` | Ngưỡng điểm cosine similarity tối thiểu để chọn category |
 | `CATEGORY_CLASSIFICATION_MIN_MARGIN` | `0.03` | Ngưỡng chênh lệch điểm tối thiểu giữa Top 1 và Top 2 |
