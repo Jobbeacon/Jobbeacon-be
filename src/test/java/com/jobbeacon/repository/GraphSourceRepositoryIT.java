@@ -6,6 +6,7 @@ import com.jobbeacon.entity.User;
 import com.jobbeacon.repository.projection.GraphCandidateSavedJob;
 import com.jobbeacon.repository.projection.GraphCandidateSkill;
 import jakarta.persistence.EntityManager;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -78,7 +79,8 @@ class GraphSourceRepositoryIT {
     jdbc.update("INSERT INTO cv_profile (id, user_id) VALUES (?, ?)", profileId, userId);
     jdbc.update("INSERT INTO skill (id, name) VALUES (?, 'Java')", skillId);
     jdbc.update(
-        "INSERT INTO cv_skill_mapping (cv_profile_id, skill_id, confidence, experience_months) VALUES (?, ?, 0.9, 24)",
+        "INSERT INTO cv_skill_mapping (cv_profile_id, skill_id, confidence, experience_months, last_used_at) "
+            + "VALUES (?, ?, 0.9, 24, date '2025-06-01')",
         profileId, skillId);
 
     List<GraphCandidateSkill> skills = graphSourceRepository.findGraphCandidateSkills(Set.of(userId));
@@ -87,6 +89,7 @@ class GraphSourceRepositoryIT {
     assertThat(skills.get(0).userId()).isEqualTo(userId);
     assertThat(skills.get(0).skillId()).isEqualTo(skillId);
     assertThat(skills.get(0).experienceMonths()).isEqualTo(24);
+    assertThat(skills.get(0).lastUsedAt()).isEqualTo(LocalDate.of(2025, 6, 1));
   }
 
   @Test

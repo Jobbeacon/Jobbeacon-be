@@ -72,6 +72,49 @@ public class JobElasticsearchRepository {
         }
     }
 
+    /** Titles to search for; a job counts when it has every word of one of them. */
+    public record TitleQuery(String title, float boost) {
+    }
+
+    public record TitleHit(UUID jobId, String title) {
+    }
+
+    /** Jobs that have not expired, best title first, then newest. */
+    public List<TitleHit> findOpenByTitles(List<TitleQuery> titles, int size) {
+        try {
+            SearchResponse<JsonData> response = elasticsearchClient.search(search -> search
+                    .index(properties.getIndex())
+                    .size(size)
+                    .source(source -> source.filter(filter -> filter.includes("title")))
+                    .query(query -> query.bool(bool -> {
+                        bool.minimumShouldMatch("1");
+                        for (TitleQuery title : titles) {
+                            bool.should(should -> should.constantScore(constant -> constant
+                                    .boost(title.boost())
+                                    .filter(filter -> filter.match(match -> match
+                                            .field("title").query(title.title()).operator(Operator.And)))));
+                        }
+                        return bool.filter(filter -> filter.bool(open -> open
+                                .minimumShouldMatch("1")
+                                .should(should -> should.bool(none -> none
+                                        .mustNot(not -> not.exists(exists -> exists.field("expired_date")))))
+                                .should(should -> should.range(range -> range
+                                        .date(date -> date.field("expired_date").gt("now"))))));
+                    }))
+                    .sort(sort -> sort.score(score -> score.order(SortOrder.Desc)))
+                    .sort(sort -> sort.field(field -> field.field("posted_date").order(SortOrder.Desc))), JsonData.class);
+            List<TitleHit> hits = new ArrayList<>();
+            for (Hit<JsonData> hit : response.hits().hits()) {
+                if (hit.source() != null) {
+                    hits.add(new TitleHit(UUID.fromString(hit.id()), text(hit.source().to(Map.class).get("title"))));
+                }
+            }
+            return hits;
+        } catch (IOException | ElasticsearchException exception) {
+            throw new InternalServerError("search_unavailable", "search_unavailable", null);
+        }
+    }
+
     private JobSummaryResponse toSummary(String hitId, Map<String, Object> source) {
         Object id = source.get("id");
         List<String> locations = source.get("locations") instanceof List<?> values

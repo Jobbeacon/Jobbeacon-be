@@ -45,7 +45,7 @@ public interface GraphSourceRepository extends BaseRepository<Job> {
 
     @Query("""
             select new com.jobbeacon.repository.projection.GraphCandidateSkill(
-                p.userId, s.id, s.name, s.normalizedName, m.confidence, m.experienceMonths)
+                p.userId, s.id, s.name, s.normalizedName, m.confidence, m.experienceMonths, m.lastUsedAt)
             from CvSkillMapping m
             join m.cvProfile p
             join m.skill s
