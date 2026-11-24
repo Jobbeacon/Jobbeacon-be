@@ -4,7 +4,6 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.json.JsonMapper;
-import com.google.genai.Client;
 import com.google.genai.errors.ApiException;
 import com.google.genai.types.Content;
 import com.google.genai.types.GenerateContentConfig;
@@ -13,22 +12,18 @@ import com.google.genai.types.GenerateContentResponseUsageMetadata;
 import com.google.genai.types.HttpOptions;
 import com.google.genai.types.HttpRetryOptions;
 import com.google.genai.types.Part;
-import com.google.genai.types.ThinkingConfig;
+import com.jobbeacon.client.GeminiRetryExecutor.GeminiDeadlineExceededException;
 import com.jobbeacon.dto.cv.CvParsedPayload;
 import com.jobbeacon.exception.CvExtractionException;
-import jakarta.annotation.PreDestroy;
 import java.io.InterruptedIOException;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CompletionException;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
@@ -44,67 +39,46 @@ public class GeminiCvExtractionClient {
   static final String MODE_PDF = "pdf";
   private static final String PDF_MIME_TYPE = "application/pdf";
   private static final String JSON_MIME_TYPE = "application/json";
+  private static final Duration MIN_REQUEST_TIMEOUT = Duration.ofSeconds(10);
+  /** The user is waiting: every model and key once, no second round. */
+  private static final GeminiRetryPolicy NO_RETRY = new GeminiRetryPolicy(0, 0, 1);
 
   private static final ObjectMapper MAPPER = JsonMapper.builder()
       .disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
       .build();
 
-  /** Seam over the SDK call so the client can be tested without network. */
-  @FunctionalInterface
-  interface ContentGenerator {
-    CompletableFuture<GenerateContentResponse> generate(
-        String model, List<Content> contents, GenerateContentConfig config);
-  }
-
-  private final Client sdkClient;
-  private final ContentGenerator generator;
-  private final String model;
+  private final GeminiRetryExecutor retryExecutor;
+  private final boolean enabled;
+  /** Best first. */
+  private final List<String> models;
   private final Duration timeout;
+  private final Duration deadline;
   private final int maxOutputTokens;
   private final int thinkingBudget;
 
-  @Autowired
   public GeminiCvExtractionClient(
-      @Value("${app.gemini.api-key:}") String apiKey,
-      @Value("${app.gemini.generation-model:gemini-2.5-flash}") String model,
+      GeminiRetryExecutor retryExecutor,
+      GeminiClientPool clientPool,
+      @Value("${app.cv.models:${app.gemini.chat-models}}") List<String> models,
       @Value("${app.cv.model-timeout:30s}") Duration timeout,
+      @Value("${app.cv.model-deadline:50s}") Duration deadline,
       @Value("${app.cv.max-output-tokens:8192}") int maxOutputTokens,
       @Value("${app.cv.model-thinking-budget:0}") int thinkingBudget
   ) {
-    if (apiKey == null || apiKey.isBlank()) {
+    this.retryExecutor = retryExecutor;
+    this.enabled = clientPool.isConfigured();
+    if (!enabled) {
       log.warn("(init) Gemini API key is not configured (app.gemini.api-key). CV model extraction is disabled.");
-      this.sdkClient = null;
-      this.generator = null;
-    } else {
-      this.sdkClient = Client.builder().apiKey(apiKey).build();
-      this.generator = sdkClient.async.models::generateContent;
     }
-    this.model = model;
+    this.models = models;
     this.timeout = timeout;
+    this.deadline = deadline;
     this.maxOutputTokens = maxOutputTokens;
     this.thinkingBudget = thinkingBudget;
-  }
-
-  GeminiCvExtractionClient(
-      ContentGenerator generator, String model, Duration timeout, int maxOutputTokens, int thinkingBudget
-  ) {
-    this.sdkClient = null;
-    this.generator = generator;
-    this.model = model;
-    this.timeout = timeout;
-    this.maxOutputTokens = maxOutputTokens;
-    this.thinkingBudget = thinkingBudget;
-  }
-
-  @PreDestroy
-  void close() {
-    if (sdkClient != null) {
-      sdkClient.close();
-    }
   }
 
   public boolean isEnabled() {
-    return generator != null;
+    return enabled;
   }
 
   /** Text mode: sends the preprocessed CV text (between delimiters) plus deterministic hints. */
@@ -133,7 +107,7 @@ public class GeminiCvExtractionClient {
     return generate(MODE_PDF, content);
   }
 
-  GenerateContentConfig buildConfig() {
+  GenerateContentConfig buildConfig(String model, Instant deadlineAt) {
     GenerateContentConfig.Builder builder = GenerateContentConfig.builder()
         .systemInstruction(Content.fromParts(Part.fromText(CvExtractionPrompt.SYSTEM_INSTRUCTION)))
         .responseMimeType(JSON_MIME_TYPE)
@@ -142,17 +116,21 @@ public class GeminiCvExtractionClient {
         .candidateCount(1)
         .maxOutputTokens(maxOutputTokens)
         .httpOptions(HttpOptions.builder()
-            .timeout(Math.toIntExact(timeout.toMillis()))
+            .timeout(requestTimeoutMs(deadlineAt))
             .retryOptions(HttpRetryOptions.builder().attempts(1).build())
             .build());
-    if (thinkingBudget >= 0) {
-      builder.thinkingConfig(ThinkingConfig.builder().thinkingBudget(thinkingBudget).build());
-    }
+    GeminiThinking.forModel(model, null, thinkingBudget).ifPresent(builder::thinkingConfig);
     return builder.build();
   }
 
+  /** What is left until the deadline, but not below the shortest timeout Gemini accepts. */
+  private int requestTimeoutMs(Instant deadlineAt) {
+    long remainingMs = Duration.between(Instant.now(), deadlineAt).toMillis();
+    return Math.toIntExact(Math.min(timeout.toMillis(), Math.max(MIN_REQUEST_TIMEOUT.toMillis(), remainingMs)));
+  }
+
   private CvModelResult generate(String mode, Content content) {
-    if (generator == null) {
+    if (!enabled) {
       log.warn("(generate) mode: {}, status: disabled, reason: Gemini API key is not configured", mode);
       throw CvExtractionException.modelError(null);
     }
@@ -160,10 +138,10 @@ public class GeminiCvExtractionClient {
     long start = System.nanoTime();
     GenerateContentResponse response;
     try {
-      response = awaitResponse(content);
+      response = callModel(content);
     } catch (CvExtractionException e) {
-      log.warn("(generate) mode: {}, model: {}, status: {}, latencyMs: {}, cause: {}",
-          mode, model, e.getCode(), elapsedMs(start), causeName(e.getCause()));
+      log.warn("(generate) mode: {}, models: {}, status: {}, latencyMs: {}, cause: {}",
+          mode, models, e.getCode(), elapsedMs(start), causeName(e.getCause()));
       throw e;
     }
     long latencyMs = elapsedMs(start);
@@ -173,7 +151,7 @@ public class GeminiCvExtractionClient {
     Integer candidateTokens =
         usage.flatMap(GenerateContentResponseUsageMetadata::candidatesTokenCount).orElse(null);
     Integer thoughtsTokens = usage.flatMap(GenerateContentResponseUsageMetadata::thoughtsTokenCount).orElse(null);
-    String usedModel = response.modelVersion().orElse(model);
+    String usedModel = response.modelVersion().orElse(models.get(0));
 
     CvParsedPayload payload;
     try {
@@ -191,33 +169,16 @@ public class GeminiCvExtractionClient {
     return new CvModelResult(payload, usedModel, promptTokens, candidateTokens, thoughtsTokens, latencyMs);
   }
 
-  private GenerateContentResponse awaitResponse(Content content) {
-    CompletableFuture<GenerateContentResponse> future;
+  private GenerateContentResponse callModel(Content content) {
+    Instant deadlineAt = Instant.now().plus(deadline);
     try {
-      future = generator.generate(model, List.of(content), buildConfig());
-    } catch (RuntimeException e) {
-      throw CvExtractionException.modelError(e);
-    }
-    if (future == null) {
-      throw CvExtractionException.modelError(null);
-    }
-    try {
-      return future.get(timeout.toMillis(), TimeUnit.MILLISECONDS);
-    } catch (TimeoutException e) {
-      future.cancel(true);
+      return retryExecutor.execute("extractCv", models, NO_RETRY, deadlineAt,
+          (client, model) -> client.models.generateContent(
+              model, List.of(content), buildConfig(model, deadlineAt)));
+    } catch (GeminiDeadlineExceededException e) {
       throw CvExtractionException.modelTimeout(e);
-    } catch (InterruptedException e) {
-      future.cancel(true);
-      Thread.currentThread().interrupt();
-      throw CvExtractionException.modelError(e);
-    } catch (ExecutionException | CompletionException e) {
-      Throwable cause = e.getCause() != null ? e.getCause() : e;
-      if (isTimeout(cause)) {
-        throw CvExtractionException.modelTimeout(cause);
-      }
-      throw CvExtractionException.modelError(cause);
     } catch (RuntimeException e) {
-      throw CvExtractionException.modelError(e);
+      throw isTimeout(e) ? CvExtractionException.modelTimeout(e) : CvExtractionException.modelError(e);
     }
   }
 
