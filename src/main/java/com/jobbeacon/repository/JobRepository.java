@@ -58,6 +58,10 @@ public interface JobRepository extends BaseRepository<Job> {
     )
     Page<JobSummaryResponse> findJobsByCompanyId(@Param("companyId") UUID companyId, Pageable pageable);
 
+    List<Job> findByCompanyIdAndContentHash(UUID companyId, String contentHash);
+
+    List<Job> findByIdIn(Collection<UUID> ids);
+
     @Modifying(flushAutomatically = true)
     @Query("update Job j set j.company.id = :targetId where j.company.id = :sourceId")
     int moveJobsToCompany(@Param("sourceId") UUID sourceId, @Param("targetId") UUID targetId);

@@ -29,11 +29,13 @@ import com.jobbeacon.repository.JobSourceRepository;
 import com.jobbeacon.search.JobSearchOutboxService;
 import com.jobbeacon.repository.SemanticEmbeddingRepository;
 import com.jobbeacon.service.CategoryClassificationService;
+import com.jobbeacon.service.JobDeduplicationService;
 import com.jobbeacon.service.JobService;
 import com.jobbeacon.service.LocationMappingService;
 import com.jobbeacon.service.SkillResolutionService;
 import com.jobbeacon.utils.SourceJobKeys;
 import com.jobbeacon.utils.UrlUtils;
+import com.jobbeacon.utils.dedup.CompanyNameNormalizer;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -49,6 +51,7 @@ import java.util.Comparator;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.Consumer;
@@ -76,6 +79,7 @@ public class JobServiceImpl implements JobService {
     private final SemanticEmbeddingRepository semanticEmbeddingRepository;
     private final JobElasticsearchRepository jobElasticsearchRepository;
     private final CategoryRepository categoryRepository;
+    private final JobDeduplicationService jobDeduplicationService;
 
     @Override
     @Transactional
@@ -104,16 +108,7 @@ public class JobServiceImpl implements JobService {
             return;
         }
 
-        Company company = null;
-        if (message.getCompanyName() != null && !message.getCompanyName().trim().isEmpty()) {
-            company = companyRepository.findByNameIgnoreCase(message.getCompanyName().trim())
-                    .orElseGet(() -> {
-                        Company newCompany = new Company();
-                        newCompany.setName(message.getCompanyName().trim());
-                        newCompany.setLogoUrl(message.getCompanyLogoUrl());
-                        return companyRepository.save(newCompany);
-                    });
-        }
+        Company company = resolveCompany(message);
 
         Set<Skill> skills = skillResolutionService.resolveSkills(message.getSkills());
 
@@ -154,7 +149,15 @@ public class JobServiceImpl implements JobService {
             job.setCategories(categories);
         }
 
+        // From the job rather than the message: on an update a missing description keeps the stored one.
+        JobDeduplicationService.JobFingerprint fp =
+                jobDeduplicationService.fingerprint(job.getTitle(), job.getDescription());
+        job.setTitleNormalized(fp.titleNormalized());
+        job.setContentHash(fp.contentHash());
+        job.setMinhash(fp.minhash());
+
         job = jobRepository.save(job);
+        jobDeduplicationService.saveBands(job.getId(), fp.bands());
         List<JobLocation> jobLocations;
         if (!isNew && mappedLocations.isEmpty()) {
             jobLocations = jobLocationRepository.findByJobId(job.getId());
@@ -195,6 +198,88 @@ public class JobServiceImpl implements JobService {
         }
         graphSyncOutboxService.jobChanged(job.getId());
         semanticEmbeddingRepository.markJobChanged(job.getId());
+    }
+
+    @Override
+    @Transactional
+    public boolean tryMergeDuplicate(JobPostingMessage message) {
+        JobSource jobSource = resolveJobSource(message);
+        String sourceJobKey = SourceJobKeys.from(message.getUrl());
+        // A posting already known on its own site, or without a key, is left to processJobPostingMessage.
+        if (jobSource == null || sourceJobKey == null
+                || (jobSourceMappingRepository.findBySourceJobKey(jobSource.getId(), sourceJobKey)
+                .isPresent())) {
+            return false;
+        }
+        Company company = resolveCompany(message);
+        if (company == null) {
+            return false;
+        }
+        JobDeduplicationService.JobFingerprint fp =
+                jobDeduplicationService.fingerprint(message.getTitle(), message.getDescription());
+        Optional<Job> duplicate = jobDeduplicationService.findDuplicate(
+                company.getId(), jobSource == null ? null : jobSource.getId(), fp,
+                message.getMinSalary(), message.getMaxSalary());
+        if (duplicate.isEmpty()) {
+            return false;
+        }
+        Job job = duplicate.get();
+
+        // Only the source list of the existing job changes; its columns and fingerprint stay as they are.
+        JobSourceMapping mapping = new JobSourceMapping();
+        mapping.setJob(job);
+        mapping.setSource(jobSource);
+        mapping.setJobUrl(message.getUrl());
+        mapping.setSourceJobKey(sourceJobKey);
+        mapping.setCrawledAt(toInstant(message.getCrawledAt()));
+        // Persisted by cascade from Job on flush, see processJobPostingMessage.
+        job.getJobSourceMappings().add(mapping);
+        jobSearchOutboxService.updated(job, jobLocationRepository.findByJobId(job.getId()));
+        graphSyncOutboxService.jobChanged(job.getId());
+        log.info("(tryMergeDuplicate) merged into jobId: {}, source: {}, url: {}",
+                job.getId(), jobSource.getDomain(), message.getUrl());
+        return true;
+    }
+
+    private Company resolveCompany(JobPostingMessage message) {
+        if (message.getCompanyName() == null || message.getCompanyName().trim().isEmpty()) {
+            return null;
+        }
+        String name = message.getCompanyName().trim();
+        String normalized = CompanyNameNormalizer.normalize(name);
+        Optional<Company> found = normalized == null || normalized.isEmpty()
+                ? Optional.empty()
+                : companyRepository.findFirstByNormalizedNameOrderByIdAsc(normalized);
+        if (found.isPresent()) {
+            return found.get();
+        }
+        Optional<Company> byName = companyRepository.findByNameIgnoreCase(name);
+        if (byName.isPresent()) {
+            Company company = byName.get();
+            if (company.getNormalizedName() == null) {
+                company.setNormalizedName(normalized);
+                company = companyRepository.save(company);
+            }
+            return company;
+        }
+        Company newCompany = new Company();
+        newCompany.setName(name);
+        newCompany.setLogoUrl(message.getCompanyLogoUrl());
+        newCompany.setNormalizedName(normalized);
+        return companyRepository.save(newCompany);
+    }
+
+    private JobSource resolveJobSource(JobPostingMessage message) {
+        String domain = UrlUtils.extractDomain(message.getUrl());
+        if (domain == null) {
+            return null;
+        }
+        return jobSourceRepository.findByDomainIgnoreCase(domain)
+                .orElseGet(() -> {
+                    JobSource newSource = new JobSource();
+                    newSource.setDomain(domain);
+                    return jobSourceRepository.save(newSource);
+                });
     }
 
     /**

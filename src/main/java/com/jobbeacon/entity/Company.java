@@ -24,4 +24,7 @@ public class Company extends BaseEntity {
 
     @Column(name = "logo_url", columnDefinition = "TEXT")
     private String logoUrl;
+
+    @Column(name = "normalized_name")
+    private String normalizedName;
 }

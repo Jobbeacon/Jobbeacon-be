@@ -14,6 +14,8 @@ import java.util.Optional;
 public interface CompanyRepository extends BaseRepository<Company> {
     Optional<Company> findByNameIgnoreCase(String name);
 
+    Optional<Company> findFirstByNormalizedNameOrderByIdAsc(String normalizedName);
+
     @Query(
             value = """
             select new com.jobbeacon.repository.projection.CompanyJobCount(c.id, c.name, c.logoUrl, count(j.id))

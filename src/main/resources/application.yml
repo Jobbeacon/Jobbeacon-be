@@ -48,6 +48,19 @@ spring:
         prefetch: ${RABBITMQ_PREFETCH:5}
 
 app:
+  job-dedup:
+    enabled: ${JOB_DEDUP_ENABLED:true}
+    window-days: ${JOB_DEDUP_WINDOW_DAYS:30}
+    jaccard-threshold: ${JOB_DEDUP_JACCARD_THRESHOLD:0.8}
+    title-threshold: ${JOB_DEDUP_TITLE_THRESHOLD:0.8}
+    salary-tolerance: ${JOB_DEDUP_SALARY_TOLERANCE:0.5}
+    high-content-threshold: ${JOB_DEDUP_HIGH_CONTENT_THRESHOLD:0.9}
+    relaxed-title-threshold: ${JOB_DEDUP_RELAXED_TITLE_THRESHOLD:0.3}
+    no-title-threshold: ${JOB_DEDUP_NO_TITLE_THRESHOLD:0.95}
+    containment-threshold: ${JOB_DEDUP_CONTAINMENT_THRESHOLD:0.85}
+    containment-title-threshold: ${JOB_DEDUP_CONTAINMENT_TITLE_THRESHOLD:0.6}
+    containment-min-shingles: ${JOB_DEDUP_CONTAINMENT_MIN_SHINGLES:100}
+    short-text-shingles: ${JOB_DEDUP_SHORT_TEXT_SHINGLES:100}
   geocode:
     enabled: true
     base-url: https://nominatim.openstreetmap.org/search
