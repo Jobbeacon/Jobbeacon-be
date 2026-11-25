@@ -59,6 +59,9 @@ app:
   rabbitmq:
     job-posting:
       queue: job-posting.parsed
+  admin:
+    # Emails promoted to ADMIN when they sign in (comma separated). Used to bootstrap the first admin.
+    emails: ${APP_ADMIN_EMAILS:}
   gemini:
     api-key: ${GEMINI_API_KEY:}
     embedding-model: ${GEMINI_EMBEDDING_MODEL:gemini-embedding-2}
@@ -124,6 +127,15 @@ server:
     context-path: /jobbeacon-be
   
   forward-headers-strategy: framework
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,prometheus
+  endpoint:
+    health:
+      show-details: never
 
 logging:
   level:
