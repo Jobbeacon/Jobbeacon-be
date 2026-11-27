@@ -9,6 +9,7 @@ import com.jobbeacon.entity.Province;
 import com.jobbeacon.entity.UserJobPreference;
 import com.jobbeacon.exception.base.BadRequestException;
 import com.jobbeacon.repository.ProvinceRepository;
+import com.jobbeacon.repository.SemanticEmbeddingRepository;
 import com.jobbeacon.repository.UserJobPreferenceRepository;
 import com.jobbeacon.service.JobPreferenceService;
 import java.util.ArrayList;
@@ -41,15 +42,18 @@ public class JobPreferenceServiceImpl implements JobPreferenceService {
 
   private final UserJobPreferenceRepository userJobPreferenceRepository;
   private final ProvinceRepository provinceRepository;
+  private final SemanticEmbeddingRepository semanticEmbeddingRepository;
   private final TransactionTemplate transactionTemplate;
 
   public JobPreferenceServiceImpl(
       UserJobPreferenceRepository userJobPreferenceRepository,
       ProvinceRepository provinceRepository,
+      SemanticEmbeddingRepository semanticEmbeddingRepository,
       PlatformTransactionManager transactionManager
   ) {
     this.userJobPreferenceRepository = userJobPreferenceRepository;
     this.provinceRepository = provinceRepository;
+    this.semanticEmbeddingRepository = semanticEmbeddingRepository;
     this.transactionTemplate = new TransactionTemplate(transactionManager);
     // Own transaction per attempt: a failed attempt leaves its transaction rollback-only.
     this.transactionTemplate.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
@@ -99,6 +103,8 @@ public class JobPreferenceServiceImpl implements JobPreferenceService {
     preference.getProvinces().clear();
     preference.getProvinces().addAll(provinces);
     UserJobPreference saved = userJobPreferenceRepository.saveAndFlush(preference);
+    // The desired titles are part of what the candidate is compared with jobs by.
+    semanticEmbeddingRepository.markCandidateChanged(userId);
     log.info("(updatePreference) saved, userId: {}, preferenceId: {}", userId, saved.getId());
     return JobPreferenceResponse.from(saved);
   }

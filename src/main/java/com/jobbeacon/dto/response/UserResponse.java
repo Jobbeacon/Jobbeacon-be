@@ -1,5 +1,6 @@
 package com.jobbeacon.dto.response;
 
+import com.jobbeacon.constant.UserRole;
 import com.jobbeacon.constant.UserStatus;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -22,6 +23,8 @@ public class UserResponse {
   private String displayName;
 
   private String avatarUrl;
+
+  private UserRole role;
 
   private UserStatus status;
 

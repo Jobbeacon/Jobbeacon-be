@@ -20,6 +20,7 @@ import org.springframework.context.MessageSource;
 import org.springframework.context.support.DefaultMessageSourceResolvable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingRequestHeaderException;
@@ -109,6 +110,17 @@ public class ExceptionHandlerAdvice {
             "com.jobbeacon.exception.base.BadRequestException",
             resolveLanguage(webRequest)
         ));
+  }
+
+  @ExceptionHandler(HttpMessageNotReadableException.class)
+  public ResponseEntity<ResponseGeneral<Error>> handleNotReadableException(
+      HttpMessageNotReadableException exception,
+      WebRequest webRequest
+  ) {
+    log.error("(handleNotReadableException) {}", exception.getMessage());
+    return ResponseEntity
+        .status(HttpStatus.BAD_REQUEST)
+        .body(getError(HttpStatus.BAD_REQUEST.value(), "invalid_request_body", resolveLanguage(webRequest)));
   }
 
   @ExceptionHandler(Exception.class)

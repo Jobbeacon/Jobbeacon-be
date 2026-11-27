@@ -33,11 +33,9 @@ Toàn bộ cấu hình mặc định nằm ở [`src/main/resources/application.
 | `GEMINI_EMBEDDING_DIMENSION` | `1536` | Số chiều embedding (phải khớp với embedding của category) |
 | `CATEGORY_CLASSIFICATION_MIN_SCORE` | `0.72` | Ngưỡng điểm cosine similarity tối thiểu để chọn category |
 | `CATEGORY_CLASSIFICATION_MIN_MARGIN` | `0.03` | Ngưỡng chênh lệch điểm tối thiểu giữa Top 1 và Top 2 |
-| `TITLE_MATCHING_ENABLED` | `true` | Khớp chức danh user với tiêu đề job theo nghĩa (dùng Gemini ở nền) để gợi ý việc làm; tắt thì chỉ khớp theo từ |
-| `TITLE_MATCHING_INTERVAL` | `PT30S` | Chu kỳ chạy nền |
-| `TITLE_MATCHING_BATCH_SIZE` | `50` | Số tiêu đề tạo embedding và số chức danh user xử lý mỗi lượt |
-| `TITLE_MATCHING_NEAREST` | `80` | Số tiêu đề job gần nhất đưa cho LLM xác nhận với mỗi chức danh |
-| `TITLE_MATCHING_MIN_SIMILARITY` | `0.55` | Dưới mức này thì không đưa cho LLM |
+| `SEMANTIC_MATCHING_ENABLED` | `true` | Embed CV/vị trí mong muốn và job ở nền để gợi ý việc làm theo nghĩa; tắt thì gợi ý chỉ dựa trên graph và từ trong chức danh |
+| `SEMANTIC_MATCHING_INTERVAL` | `PT30S` | Thời gian nghỉ giữa hai lượt chạy nền |
+| `SEMANTIC_MATCHING_BATCH_SIZE` | `50` | Số CV và số job embed mỗi lượt (mỗi loại) |
 | `PORT` | `8080` | Cổng HTTP server |
 | `EUREKA_URL` | `http://localhost:8761/eureka/` | Discovery server (`../Jobbeacon-discovery`); BE đăng ký với tên `jobbeacon-be`, recommendation gọi BE qua tên này |
 | `EUREKA_ENABLED` | `true` | Tắt để chạy BE không cần discovery |

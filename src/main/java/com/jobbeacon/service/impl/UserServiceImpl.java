@@ -27,6 +27,7 @@ public class UserServiceImpl implements UserService {
         .email(user.getEmail())
         .displayName(user.getDisplayName())
         .avatarUrl(user.getAvatarUrl())
+        .role(user.getRole())
         .status(user.getStatus())
         .createdAt(user.getCreatedAt())
         .lastLoginAt(user.getLastLoginAt())

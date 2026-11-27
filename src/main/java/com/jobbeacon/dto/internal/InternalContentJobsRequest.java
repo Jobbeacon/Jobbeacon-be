@@ -6,8 +6,10 @@ import jakarta.validation.constraints.NotNull;
 
 import java.util.UUID;
 
-public record InternalTitleJobsRequest(
+/** How many jobs to find for each source; 0 skips it. */
+public record InternalContentJobsRequest(
         @NotNull UUID userId,
-        @Min(1) @Max(200) int limit
+        @Min(0) @Max(200) int titleLimit,
+        @Min(0) @Max(200) int semanticLimit
 ) {
 }

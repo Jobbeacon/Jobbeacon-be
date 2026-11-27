@@ -6,6 +6,8 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -17,4 +19,7 @@ public interface CvProfileRepository extends BaseRepository<CvProfile> {
     @Modifying(flushAutomatically = true, clearAutomatically = true)
     @Query("delete from CvProfile p where p.userId = :userId")
     int deleteByUserId(@Param("userId") UUID userId);
+
+    @Query("select p.userId from CvProfile p where p.userId in :userIds")
+    List<UUID> findUserIdsWithProfile(@Param("userIds") Collection<UUID> userIds);
 }

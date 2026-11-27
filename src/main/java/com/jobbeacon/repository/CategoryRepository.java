@@ -46,4 +46,12 @@ public interface CategoryRepository extends BaseRepository<Category> {
             @Param("embedding") float[] embedding,
             Pageable pageable
     );
+
+    @Query("select c from Category c where c.parent.id = :parentId")
+    List<Category> findChildren(@Param("parentId") UUID parentId);
+
+    @Query("select c from Category c where c.parent is null")
+    List<Category> findRoots();
+
+    boolean existsByParentId(UUID parentId);
 }
