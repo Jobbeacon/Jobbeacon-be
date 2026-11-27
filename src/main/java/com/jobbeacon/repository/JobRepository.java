@@ -80,7 +80,7 @@ public interface JobRepository extends BaseRepository<Job> {
     @Query(
         """
             select new com.jobbeacon.repository.projection.JobPreferenceFacts(
-                j.id, j.title, j.employmentType, j.minSalary, j.maxSalary, j.currency, j.salaryPeriod, j.experienceMonths
+                j.id, j.employmentType, j.minSalary, j.maxSalary, j.currency, j.salaryPeriod, j.experienceMonths
             )
             from Job j
             where j.id in :ids

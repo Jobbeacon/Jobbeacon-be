@@ -10,6 +10,7 @@ import com.jobbeacon.exception.base.NotFoundException;
 import com.jobbeacon.graph.GraphSyncOutboxService;
 import com.jobbeacon.repository.CvProfileRepository;
 import com.jobbeacon.repository.CvSkillMappingRepository;
+import com.jobbeacon.repository.SemanticEmbeddingRepository;
 import com.jobbeacon.repository.SkillRepository;
 import com.jobbeacon.service.CvProfileService;
 import java.math.BigDecimal;
@@ -53,6 +54,7 @@ public class CvProfileServiceImpl implements CvProfileService {
   private final SkillRepository skillRepository;
   private final ApplicationEventPublisher eventPublisher;
   private final GraphSyncOutboxService graphSyncOutboxService;
+  private final SemanticEmbeddingRepository semanticEmbeddingRepository;
   private final TransactionTemplate transactionTemplate;
   private final Clock clock;
 
@@ -63,10 +65,11 @@ public class CvProfileServiceImpl implements CvProfileService {
       SkillRepository skillRepository,
       ApplicationEventPublisher eventPublisher,
       GraphSyncOutboxService graphSyncOutboxService,
+      SemanticEmbeddingRepository semanticEmbeddingRepository,
       PlatformTransactionManager transactionManager
   ) {
     this(cvProfileRepository, cvSkillMappingRepository, skillRepository, eventPublisher, graphSyncOutboxService,
-        transactionManager, Clock.systemUTC());
+        semanticEmbeddingRepository, transactionManager, Clock.systemUTC());
   }
 
   CvProfileServiceImpl(
@@ -75,6 +78,7 @@ public class CvProfileServiceImpl implements CvProfileService {
       SkillRepository skillRepository,
       ApplicationEventPublisher eventPublisher,
       GraphSyncOutboxService graphSyncOutboxService,
+      SemanticEmbeddingRepository semanticEmbeddingRepository,
       PlatformTransactionManager transactionManager,
       Clock clock
   ) {
@@ -83,6 +87,7 @@ public class CvProfileServiceImpl implements CvProfileService {
     this.skillRepository = skillRepository;
     this.eventPublisher = eventPublisher;
     this.graphSyncOutboxService = graphSyncOutboxService;
+    this.semanticEmbeddingRepository = semanticEmbeddingRepository;
     this.transactionTemplate = new TransactionTemplate(transactionManager);
     // Own transaction per attempt: a failed attempt leaves its transaction rollback-only, so the
     // retry must not join it (nor a caller's transaction).
@@ -127,6 +132,7 @@ public class CvProfileServiceImpl implements CvProfileService {
       throw new NotFoundException(CV_PROFILE_NOT_FOUND);
     }
     graphSyncOutboxService.candidateChanged(userId);
+    semanticEmbeddingRepository.markCandidateChanged(userId);
   }
 
   @Override
@@ -147,6 +153,7 @@ public class CvProfileServiceImpl implements CvProfileService {
       throw new NotFoundException(CV_PROFILE_SKILL_NOT_FOUND);
     }
     graphSyncOutboxService.candidateChanged(userId);
+    semanticEmbeddingRepository.markCandidateChanged(userId);
   }
 
   /**
@@ -184,6 +191,7 @@ public class CvProfileServiceImpl implements CvProfileService {
     mapping.setCvProfile(profile);
     mapping.setSkill(skill);
     cvSkillMappingRepository.saveAndFlush(mapping);
+    semanticEmbeddingRepository.markCandidateChanged(userId);
     log.info("(addSkill) added, userId: {}, profileId: {}, skillId: {}", userId, profile.getId(), skillId);
     return new CvProfileSkills(profile.getId(), loadSkills(profile.getId()));
   }
@@ -224,6 +232,7 @@ public class CvProfileServiceImpl implements CvProfileService {
     List<CvSkillMapping> mappings = buildMappings(saved, payload.skills());
     cvSkillMappingRepository.saveAllAndFlush(mappings);
     graphSyncOutboxService.candidateChanged(userId);
+    semanticEmbeddingRepository.markCandidateChanged(userId);
 
     // Delivered to @TransactionalEventListener(AFTER_COMMIT) listeners only once the transaction commits.
     eventPublisher.publishEvent(new CvProfilePublishedEvent(userId, saved.getId()));

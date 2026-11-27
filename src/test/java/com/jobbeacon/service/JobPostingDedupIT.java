@@ -10,6 +10,7 @@ import static org.mockito.Mockito.when;
 import com.jobbeacon.dto.message.JobPostingMessage;
 import com.jobbeacon.graph.GraphSyncOutboxService;
 import com.jobbeacon.repository.JobElasticsearchRepository;
+import com.jobbeacon.repository.SemanticEmbeddingRepository;
 import com.jobbeacon.search.JobSearchOutboxService;
 import com.jobbeacon.service.impl.JobServiceImpl;
 import com.jobbeacon.utils.SourceJobKeys;
@@ -47,7 +48,8 @@ import org.testcontainers.utility.DockerImageName;
 @Testcontainers
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @ImportAutoConfiguration(JacksonAutoConfiguration.class)
-@Import({JobServiceImpl.class, JobSearchOutboxService.class, GraphSyncOutboxService.class})
+@Import({JobServiceImpl.class, JobSearchOutboxService.class, GraphSyncOutboxService.class,
+    SemanticEmbeddingRepository.class})
 // Each message commits on its own, as it does behind the RabbitMQ listener.
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 class JobPostingDedupIT {
@@ -98,6 +100,8 @@ class JobPostingDedupIT {
     assertThat(count("job")).isOne();
     assertThat(jdbc.queryForObject("select source_job_key from job_source_mapping", String.class)).isEqualTo("2126092");
     assertThat(searchOps()).containsExactly("c");
+    // Marked in the same transaction, before JPA wrote the job: the foreign key is only checked at commit.
+    assertThat(jdbc.queryForObject("select stale from job_embedding", Boolean.class)).isTrue();
   }
 
   @Test
