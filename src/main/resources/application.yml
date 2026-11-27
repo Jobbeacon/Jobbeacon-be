@@ -104,14 +104,13 @@ app:
     embeddings-file: ${CATEGORY_EMBEDDINGS_FILE:}
     min-score: ${CATEGORY_CLASSIFICATION_MIN_SCORE:0.72}
     min-margin: ${CATEGORY_CLASSIFICATION_MIN_MARGIN:0.03}
-  # Matching job titles with the titles users look for by meaning, for recommendations. Off: word by word only.
-  title-matching:
-    enabled: ${TITLE_MATCHING_ENABLED:true}
-    # Job titles the LLM is asked about for each title a user looks for: the nearest ones, unless too far off.
-    nearest: ${TITLE_MATCHING_NEAREST:80}
-    min-similarity: ${TITLE_MATCHING_MIN_SIMILARITY:0.55}
-    interval: ${TITLE_MATCHING_INTERVAL:PT30S}
-    batch-size: ${TITLE_MATCHING_BATCH_SIZE:50}
+  # Comparing candidates with jobs by meaning, for recommendations: both are embedded in the background. Off: no
+  # embedding, and recommendations go by the graph and by title words only.
+  semantic-matching:
+    enabled: ${SEMANTIC_MATCHING_ENABLED:true}
+    interval: ${SEMANTIC_MATCHING_INTERVAL:PT30S}
+    # Candidates and jobs embedded per run, each.
+    batch-size: ${SEMANTIC_MATCHING_BATCH_SIZE:50}
   skill-resolution:
     min-similarity: ${SKILL_RESOLUTION_MIN_SIMILARITY:0.7}
     top-k: ${SKILL_RESOLUTION_TOP_K:10}

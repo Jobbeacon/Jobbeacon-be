@@ -25,6 +25,7 @@ import com.jobbeacon.repository.JobRepository;
 import com.jobbeacon.repository.SkillRepository;
 import com.jobbeacon.repository.admin.AdminJobQueryRepository;
 import com.jobbeacon.search.JobSearchOutboxService;
+import com.jobbeacon.repository.SemanticEmbeddingRepository;
 import com.jobbeacon.search.JobSearchReindexer;
 import com.jobbeacon.service.LocationMappingService;
 import com.jobbeacon.service.admin.AdminJobService;
@@ -60,6 +61,7 @@ public class AdminJobServiceImpl implements AdminJobService {
   private final LocationMappingService locationMappingService;
   private final JobSearchOutboxService jobSearchOutboxService;
   private final JobSearchReindexer jobSearchReindexer;
+  private final SemanticEmbeddingRepository semanticEmbeddingRepository;
 
   @Override
   @Transactional(readOnly = true)
@@ -128,6 +130,7 @@ public class AdminJobServiceImpl implements AdminJobService {
       replaceLocations(job, locations);
     }
     jobRepository.save(job);
+    semanticEmbeddingRepository.markJobChanged(id);
     jobSearchReindexer.reindex(List.of(id));
     return detail(id);
   }

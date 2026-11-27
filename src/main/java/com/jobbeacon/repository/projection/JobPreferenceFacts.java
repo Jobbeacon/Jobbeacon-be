@@ -5,7 +5,6 @@ import java.util.UUID;
 /** The parts of a job that are compared with a user's job preference and CV. */
 public record JobPreferenceFacts(
         UUID jobId,
-        String title,
         String employmentType,
         Long minSalary,
         Long maxSalary,

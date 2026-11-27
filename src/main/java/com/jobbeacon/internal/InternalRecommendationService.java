@@ -2,7 +2,6 @@ package com.jobbeacon.internal;
 
 import com.jobbeacon.constant.EmploymentType;
 import com.jobbeacon.dto.internal.InternalRecommendationContextResponse;
-import com.jobbeacon.dto.internal.InternalRecommendationContextResponse.CvTitle;
 import com.jobbeacon.dto.internal.InternalRecommendationContextResponse.PreferenceMatch;
 import com.jobbeacon.entity.CvProfile;
 import com.jobbeacon.entity.Province;
@@ -10,13 +9,11 @@ import com.jobbeacon.entity.UserJobPreference;
 import com.jobbeacon.repository.CvProfileRepository;
 import com.jobbeacon.repository.JobLocationRepository;
 import com.jobbeacon.repository.JobRepository;
-import com.jobbeacon.repository.TitleMatchRepository;
 import com.jobbeacon.repository.UserJobPreferenceRepository;
 import com.jobbeacon.repository.UserSavedJobRepository;
 import com.jobbeacon.repository.projection.JobPreferenceFacts;
 import com.jobbeacon.repository.projection.JobProvince;
 import lombok.RequiredArgsConstructor;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -44,11 +41,6 @@ public class InternalRecommendationService {
     private final CvProfileRepository cvProfileRepository;
     private final JobRepository jobRepository;
     private final JobLocationRepository jobLocationRepository;
-    private final TitleMatchRepository titleMatchRepository;
-
-    @Value("${app.title-matching.enabled}")
-    private boolean matchByMeaning;
-
     public InternalRecommendationContextResponse context(UUID userId, Collection<UUID> jobIds) {
         List<UUID> savedJobIds = userSavedJobRepository.findJobIdsByUserId(userId);
         List<PreferenceMatch> matches = jobIds.isEmpty() ? List.of() : matches(userId, jobIds);
@@ -65,14 +57,10 @@ public class InternalRecommendationService {
     private List<PreferenceMatch> matches(UUID userId, Collection<UUID> jobIds) {
         UserJobPreference preference = userJobPreferenceRepository.findByUserId(userId).orElse(null);
         CvProfile cv = cvProfileRepository.findByUserId(userId).orElse(null);
-        UserTitles titles = UserTitles.of(preference, cv);
         Integer experience = cv == null ? null : cv.getTotalMonthsExperience();
-        if (preference == null && titles.isEmpty() && experience == null) {
+        if (preference == null && experience == null) {
             return List.of();
         }
-        Map<UUID, Set<String>> matchingTitles = matchByMeaning
-            ? titleMatchRepository.findMatchingTitles(titles.all(), jobIds)
-            : Map.of();
         Set<String> wantedProvinces = preference == null
             ? Set.of()
             : preference.getProvinces().stream().map(Province::getId).collect(Collectors.toSet());
@@ -84,29 +72,11 @@ public class InternalRecommendationService {
         return jobRepository.findPreferenceFactsByIds(jobIds).stream()
             .map(job -> new PreferenceMatch(
                 job.jobId(),
-                titleMatches(titles, job, matchingTitles),
                 locationMatches(wantedProvinces, provincesByJob.getOrDefault(job.jobId(), Set.of())),
                 employmentTypeMatches(wantedTypes, job.employmentType()),
                 preference == null ? null : salaryMatches(preference, job),
-                cvTitle(titles, job, matchingTitles),
                 missingExperience(experience, job.experienceMonths())))
             .toList();
-    }
-
-    private static Boolean titleMatches(UserTitles titles, JobPreferenceFacts job, Map<UUID, Set<String>> matchingTitles) {
-        return titles.desired().isEmpty() || job.title() == null ? null : matches(titles.desired(), job, matchingTitles);
-    }
-
-    private static CvTitle cvTitle(UserTitles titles, JobPreferenceFacts job, Map<UUID, Set<String>> matchingTitles) {
-        if (matches(titles.current(), job, matchingTitles)) {
-            return CvTitle.CURRENT;
-        }
-        return matches(titles.past(), job, matchingTitles) ? CvTitle.PAST : null;
-    }
-
-    private static boolean matches(List<String> titles, JobPreferenceFacts job, Map<UUID, Set<String>> matchingTitles) {
-        return UserTitles.anyMatches(titles, job.title())
-            || !Collections.disjoint(titles, matchingTitles.getOrDefault(job.jobId(), Set.of()));
     }
 
     /** The crawler stores 0 both for "no experience required" and for "not stated", so 0 tells nothing. */
