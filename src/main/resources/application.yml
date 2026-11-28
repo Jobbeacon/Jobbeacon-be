@@ -117,6 +117,11 @@ app:
   elasticsearch:
     url: ${ELASTICSEARCH_URL:http://localhost:9200}
     index: ${ELASTICSEARCH_JOB_INDEX:jobs}
+  market:
+    # VND per USD. A fixed rate: update it when the exchange rate moves a lot.
+    usd-vnd-rate: ${MARKET_USD_VND_RATE:25000}
+    # Below this many salaried jobs a group shows no salary figures, only its job count.
+    min-salary-sample: ${MARKET_MIN_SALARY_SAMPLE:5}
   search:
     backfill-on-startup: ${SEARCH_BACKFILL_ON_STARTUP:false}
 
