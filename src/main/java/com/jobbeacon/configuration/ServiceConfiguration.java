@@ -9,7 +9,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 @Configuration
-@EnableConfigurationProperties({GeocodeProperties.class, ElasticsearchProperties.class})
+@EnableConfigurationProperties({GeocodeProperties.class, ElasticsearchProperties.class, MarketProperties.class})
 public class ServiceConfiguration {
 
   @Bean
