@@ -5,7 +5,6 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 @ConfigurationProperties(prefix = "app.job-dedup")
 public record JobDedupProperties(
         boolean enabled,
-        int windowDays,
         double jaccardThreshold,
         double titleThreshold,
         double salaryTolerance,

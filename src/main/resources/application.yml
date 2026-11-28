@@ -41,6 +41,8 @@ spring:
     port: ${RABBITMQ_PORT:5672}
     username: ${RABBITMQ_USERNAME:guest}
     password: ${RABBITMQ_PASSWORD:guest}
+    # IntegrationEventPublisher waits for the broker's confirm of each event.
+    publisher-confirm-type: simple
     listener:
       simple:
         # RabbitMQ closes the channel when a delivered message is not acked within 30 minutes, and the prefetched ones
@@ -50,7 +52,6 @@ spring:
 app:
   job-dedup:
     enabled: ${JOB_DEDUP_ENABLED:true}
-    window-days: ${JOB_DEDUP_WINDOW_DAYS:30}
     jaccard-threshold: ${JOB_DEDUP_JACCARD_THRESHOLD:0.8}
     title-threshold: ${JOB_DEDUP_TITLE_THRESHOLD:0.8}
     salary-tolerance: ${JOB_DEDUP_SALARY_TOLERANCE:0.5}
@@ -72,6 +73,8 @@ app:
   rabbitmq:
     job-posting:
       queue: job-posting.parsed
+    events:
+      exchange: ${EVENTS_EXCHANGE:jobbeacon.events}
   admin:
     # Emails promoted to ADMIN when they sign in (comma separated). Used to bootstrap the first admin.
     emails: ${APP_ADMIN_EMAILS:}
@@ -137,6 +140,9 @@ app:
     min-salary-sample: ${MARKET_MIN_SALARY_SAMPLE:5}
   search:
     backfill-on-startup: ${SEARCH_BACKFILL_ON_STARTUP:false}
+  user-contact:
+    # Resends user.upserted for every user at startup (UserContactBackfillRunner). Turn on once, then back off.
+    backfill-on-startup: ${USER_CONTACT_BACKFILL_ON_STARTUP:false}
 
 server:
   port: ${PORT:8080}

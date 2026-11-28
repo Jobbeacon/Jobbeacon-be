@@ -14,8 +14,6 @@ import java.util.UUID;
 
 public interface JobLocationRepository extends BaseRepository<JobLocation> {
 
-    List<JobLocation> findByJobId(UUID jobId);
-
     @Query(
         """
             select new com.jobbeacon.repository.projection.CompanyProvince(j.company.id, p.nameLocal)

@@ -10,12 +10,12 @@ import com.jobbeacon.utils.dedup.ContentHasher;
 import com.jobbeacon.utils.dedup.JobTitleNormalizer;
 import com.jobbeacon.utils.dedup.MinHasher;
 import com.jobbeacon.utils.dedup.ShingleSimilarity;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.Duration;
+import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -26,12 +26,26 @@ import java.util.UUID;
 
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class JobDeduplicationServiceImpl implements JobDeduplicationService {
 
     private final JobRepository jobRepository;
     private final JobLshBandRepository jobLshBandRepository;
     private final JobDedupProperties properties;
+    private final Clock clock;
+
+    @Autowired
+    public JobDeduplicationServiceImpl(JobRepository jobRepository, JobLshBandRepository jobLshBandRepository,
+                                       JobDedupProperties properties) {
+        this(jobRepository, jobLshBandRepository, properties, Clock.systemUTC());
+    }
+
+    JobDeduplicationServiceImpl(JobRepository jobRepository, JobLshBandRepository jobLshBandRepository,
+                                JobDedupProperties properties, Clock clock) {
+        this.jobRepository = jobRepository;
+        this.jobLshBandRepository = jobLshBandRepository;
+        this.properties = properties;
+        this.clock = clock;
+    }
 
     @Override
     public JobFingerprint fingerprint(String title, String description) {
@@ -47,23 +61,20 @@ public class JobDeduplicationServiceImpl implements JobDeduplicationService {
     }
 
     @Override
-    public Optional<Job> findDuplicate(UUID companyId, JobFingerprint fp, Instant postedDate,
-                                       Long minSalary, Long maxSalary) {
+    public Optional<Job> findDuplicate(UUID companyId, UUID sourceId, JobFingerprint fp, Long minSalary,
+                                       Long maxSalary) {
         if (!properties.enabled() || companyId == null || fp == null) {
             return Optional.empty();
         }
-        Instant anchor = postedDate != null ? postedDate : Instant.now();
-        Duration window = Duration.ofDays(properties.windowDays());
-        Instant from = anchor.minus(window);
-        Instant to = anchor.plus(window);
+        Instant now = clock.instant();
 
         Set<String> containmentShingles =
                 ShingleSimilarity.shingles(fp.descriptionNormalized(), ShingleSimilarity.CONTAINMENT_SHINGLE);
-        List<Scored> candidates = findByHash(companyId, fp, containmentShingles, from, to).stream()
+        List<Scored> candidates = findByHash(companyId, sourceId, fp, containmentShingles, now).stream()
                 .filter(c -> passesBlockingRules(c.job(), fp, minSalary, maxSalary))
                 .toList();
         if (candidates.isEmpty() && fp.bands() != null && fp.bands().length > 0 && fp.minhash() != null) {
-            candidates = findByLsh(companyId, fp, containmentShingles, from, to).stream()
+            candidates = findByLsh(companyId, sourceId, fp, containmentShingles, now).stream()
                     .filter(c -> passesBlockingRules(c.job(), fp, minSalary, maxSalary))
                     .toList();
         }
@@ -98,15 +109,19 @@ public class JobDeduplicationServiceImpl implements JobDeduplicationService {
         jobLshBandRepository.saveAll(rows);
     }
 
-    private List<Scored> findByHash(UUID companyId, JobFingerprint fp, Set<String> containmentShingles,
-                                    Instant from, Instant to) {
+    private List<Scored> findByHash(UUID companyId, UUID sourceId, JobFingerprint fp, Set<String> containmentShingles,
+                                    Instant now) {
         if (fp.contentHash() == null) {
             return List.of();
         }
         List<Scored> result = new ArrayList<>();
         for (Job job : jobRepository.findByCompanyIdAndContentHash(companyId, fp.contentHash())) {
-            if (!inWindow(job.getPostedDate(), from, to)) {
-                log.debug("(findDuplicate) rejected jobId: {}, rule: hash, outside window", job.getId());
+            if (isExpired(job, now)) {
+                log.debug("(findDuplicate) rejected jobId: {}, rule: hash, expired", job.getId());
+                continue;
+            }
+            if (hasMappingFrom(job, sourceId)) {
+                log.debug("(findDuplicate) rejected jobId: {}, rule: hash, already mapped from same source", job.getId());
                 continue;
             }
             double title = JobTitleNormalizer.tokenSimilarity(fp.titleNormalized(), titleOf(job));
@@ -126,8 +141,8 @@ public class JobDeduplicationServiceImpl implements JobDeduplicationService {
         return result;
     }
 
-    private List<Scored> findByLsh(UUID companyId, JobFingerprint fp, Set<String> containmentShingles,
-                                   Instant from, Instant to) {
+    private List<Scored> findByLsh(UUID companyId, UUID sourceId, JobFingerprint fp, Set<String> containmentShingles,
+                                   Instant now) {
         long[] bands = fp.bands();
         List<Long> bandHashes = new ArrayList<>(bands.length);
         List<String> bandKeys = new ArrayList<>(bands.length);
@@ -135,13 +150,16 @@ public class JobDeduplicationServiceImpl implements JobDeduplicationService {
             bandHashes.add(bands[i]);
             bandKeys.add(i + ":" + bands[i]);
         }
-        List<UUID> ids = jobLshBandRepository.findCandidateJobIds(bandHashes, bandKeys, companyId, from, to);
+        List<UUID> ids = jobLshBandRepository.findCandidateJobIds(bandHashes, bandKeys, companyId, now, sourceId);
         if (ids == null || ids.isEmpty()) {
             return List.of();
         }
         Set<String> shingles = ShingleSimilarity.shingles(fp.descriptionNormalized(), MinHasher.SHINGLE);
         List<Scored> result = new ArrayList<>();
         for (Job job : jobRepository.findByIdIn(ids)) {
+            if (isExpired(job, now)) {
+                continue;
+            }
             int[] other = job.getMinhash();
             if (other == null || other.length != MinHasher.NUM_HASHES) {
                 continue;
@@ -238,8 +256,16 @@ public class JobDeduplicationServiceImpl implements JobDeduplicationService {
         return (double) Math.abs(a - b) / max > properties.salaryTolerance();
     }
 
-    private static boolean inWindow(Instant posted, Instant from, Instant to) {
-        return posted == null || (!posted.isBefore(from) && !posted.isAfter(to));
+    private static boolean hasMappingFrom(Job job, UUID sourceId) {
+        return sourceId != null && job.getJobSourceMappings() != null && job.getJobSourceMappings().stream()
+                .anyMatch(m -> m.getSource() != null && sourceId.equals(m.getSource().getId()));
+    }
+
+    /**
+     * Only postings still open are compared; the posted date plays no part.
+     */
+    private static boolean isExpired(Job job, Instant now) {
+        return job.getExpiredDate() != null && !job.getExpiredDate().isAfter(now);
     }
 
     private static String titleOf(Job job) {

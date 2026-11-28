@@ -17,7 +17,8 @@ public interface JobLshBandRepository extends JpaRepository<JobLshBand, JobLshBa
     /**
      * Distinct ids of jobs of the given company sharing at least one (band_idx, band_hash) bucket.
      * {@code bandHashes} narrows the scan through the (band_idx, band_hash) index; {@code bandKeys} (encoded as
-     * {@code "<band_idx>:<band_hash>"}) enforces the exact pair. Jobs with null posted_date are kept.
+     * {@code "<band_idx>:<band_hash>"}) enforces the exact pair. Only jobs not expired at {@code now} (null expired_date included) are returned. When
+     * {@code excludeSourceId} is not null, jobs that already have a mapping from that source are left out.
      */
     @Query(
             value = """
@@ -27,15 +28,18 @@ public interface JobLshBandRepository extends JpaRepository<JobLshBand, JobLshBa
             where b.band_hash in (:bandHashes)
               and (b.band_idx || ':' || b.band_hash) in (:bandKeys)
               and j.company_id = :companyId
-              and (j.posted_date is null or j.posted_date between :fromDate and :toDate)
+              and (j.expired_date is null or j.expired_date > :now)
+              and (cast(:excludeSourceId as uuid) is null or not exists (
+                    select 1 from job_source_mapping m
+                    where m.job_id = j.id and m.source_id = cast(:excludeSourceId as uuid)))
             """,
             nativeQuery = true
     )
     List<UUID> findCandidateJobIds(@Param("bandHashes") List<Long> bandHashes,
                                    @Param("bandKeys") List<String> bandKeys,
                                    @Param("companyId") UUID companyId,
-                                   @Param("fromDate") Instant fromDate,
-                                   @Param("toDate") Instant toDate);
+                                   @Param("now") Instant now,
+                                   @Param("excludeSourceId") UUID excludeSourceId);
 
     @Modifying
     @Query(value = "delete from job_lsh_band where job_id = :jobId", nativeQuery = true)
