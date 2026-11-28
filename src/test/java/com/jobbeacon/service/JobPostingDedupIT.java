@@ -7,13 +7,19 @@ import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.jobbeacon.configuration.JobDedupProperties;
 import com.jobbeacon.dto.message.JobPostingMessage;
 import com.jobbeacon.graph.GraphSyncOutboxService;
 import com.jobbeacon.repository.JobElasticsearchRepository;
 import com.jobbeacon.repository.SemanticEmbeddingRepository;
 import com.jobbeacon.search.JobSearchOutboxService;
+import com.jobbeacon.service.impl.JobDeduplicationServiceImpl;
 import com.jobbeacon.service.impl.JobServiceImpl;
 import com.jobbeacon.utils.SourceJobKeys;
+import java.io.IOException;
+import java.io.InputStream;
 import java.time.LocalDateTime;
 import java.util.HashSet;
 import java.util.List;
@@ -26,6 +32,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.ImportAutoConfiguration;
 import org.springframework.boot.autoconfigure.jackson.JacksonAutoConfiguration;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase;
 import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
@@ -48,8 +55,9 @@ import org.testcontainers.utility.DockerImageName;
 @Testcontainers
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @ImportAutoConfiguration(JacksonAutoConfiguration.class)
-@Import({JobServiceImpl.class, JobSearchOutboxService.class, GraphSyncOutboxService.class,
+@Import({JobServiceImpl.class, JobDeduplicationServiceImpl.class, JobSearchOutboxService.class, GraphSyncOutboxService.class,
     SemanticEmbeddingRepository.class})
+@EnableConfigurationProperties(JobDedupProperties.class)
 // Each message commits on its own, as it does behind the RabbitMQ listener.
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 class JobPostingDedupIT {
@@ -57,6 +65,18 @@ class JobPostingDedupIT {
   private static final String JV = "https://www.vietnamworks.com/accounting-lead-2126092-jv";
   private static final String JD = "https://www.vietnamworks.com/accounting-lead-2126092-jd";
   private static final LocalDateTime CRAWLED = LocalDateTime.of(2026, 11, 21, 15, 54, 24, 883_123_456);
+
+  private static final String ITVIEC = "https://itviec.com/it-jobs/backend-developer-acme";
+  private static final String TOPCV = "https://www.topcv.vn/viec-lam/backend-developer/123456.html";
+  private static final String JOB_COLUMNS = "select title, description, min_salary, max_salary, expired_date, "
+      + "experience_months, content_hash, minhash::text as minhash from job";
+  private static final LocalDateTime POSTED = LocalDateTime.of(2026, 11, 10, 9, 0);
+  private static final String BACKEND_DESCRIPTION = String.join(" ",
+      "Acme is looking for a backend developer to build and run the services behind our payment platform.",
+      "You will design REST APIs in Java and Spring Boot, model data in PostgreSQL, and publish events through RabbitMQ.",
+      "You will review code, write automated tests, and take part in the on-call rotation with the rest of the team.",
+      "We expect three years of experience with Java, good knowledge of SQL, and the habit of writing clear documentation.",
+      "Experience with Docker, Kubernetes and cloud providers is a plus, as is any work on high traffic systems.");
 
   @Container
   private static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>(
@@ -194,6 +214,134 @@ class JobPostingDedupIT {
     assertThatThrownBy(() -> jdbc.update(
         "update job_source_mapping set source_job_key = '2126092' where job_id = ?", copy))
         .isInstanceOf(DataIntegrityViolationException.class);
+  }
+
+  @Test
+  void sameContentOnAnotherSitePostedCloseIsMergedWithBothKeys() {
+    ingest(crossSite(ITVIEC, POSTED).build());
+    Map<String, Object> before = jdbc.queryForMap(JOB_COLUMNS);
+
+    ingest(crossSite(TOPCV, POSTED.plusDays(3)).title("Backend Developer (Java)").maxSalary(2600L)
+        .minSalary(1000L).experienceMonths(36).expiredDate(POSTED.plusDays(40)).build());
+
+    assertThat(count("job")).isOne();
+    assertThat(jdbc.queryForMap(JOB_COLUMNS)).isEqualTo(before);
+    assertThat(jdbc.queryForList("select source_job_key from job_source_mapping", String.class))
+        .containsExactlyInAnyOrder(SourceJobKeys.from(ITVIEC), SourceJobKeys.from(TOPCV));
+  }
+
+  @Test
+  void sameContentOnAnotherSitePostedFarApartIsMerged() {
+    ingest(crossSite(ITVIEC, POSTED).build());
+    ingest(crossSite(TOPCV, POSTED.plusDays(26)).build());
+
+    assertThat(count("job")).isOne();
+    assertThat(count("job_source_mapping")).isEqualTo(2);
+  }
+
+  @Test
+  void sameContentOnAnotherSiteAfterTheOldJobExpiredStaysSeparate() {
+    ingest(crossSite(ITVIEC, POSTED).expiredDate(POSTED.minusDays(1)).build());
+    ingest(crossSite(TOPCV, POSTED.plusDays(3)).build());
+
+    assertThat(count("job")).isEqualTo(2);
+  }
+
+  @Test
+  void realCrossSitePairsAreMerged() throws IOException {
+    for (String[] pair : new String[][] {{"c-vietnamworks", "d-itviec"}, {"e-vietnamworks-sap", "f-itviec-sap"}}) {
+      setUp();
+      ingest(fixture(pair[0]));
+      ingest(fixture(pair[1]));
+
+      assertThat(count("job")).as(pair[0] + " + " + pair[1]).isOne();
+      assertThat(count("job_source_mapping")).as(pair[0] + " + " + pair[1]).isEqualTo(2);
+    }
+  }
+
+  @Test
+  void sameContentUnderAnotherKeyOnTheSameSiteStaysSeparate() {
+    ingest(crossSite(ITVIEC, POSTED).build());
+    ingest(crossSite(ITVIEC + "-2", POSTED).build());
+
+    assertThat(count("job")).isEqualTo(2);
+    assertThat(count("job_source_mapping")).isEqualTo(2);
+  }
+
+  @Test
+  void laterCrawlOfAMergedCopyUpdatesTheJobWithoutANewMapping() {
+    ingest(crossSite(ITVIEC, POSTED).build());
+    ingest(crossSite(TOPCV, POSTED.plusDays(3)).build());
+
+    ingest(crossSite(TOPCV, POSTED.plusDays(3)).crawledAt(CRAWLED.plusHours(1)).title("Senior Backend Developer")
+        .maxSalary(2500L).build());
+
+    assertThat(count("job")).isOne();
+    assertThat(count("job_source_mapping")).isEqualTo(2);
+    assertThat(jdbc.queryForMap("select title, max_salary from job"))
+        .containsEntry("title", "Senior Backend Developer").containsEntry("max_salary", 2500L);
+    assertThat(jdbc.queryForObject("select crawled_at from job_source_mapping where source_job_key = ?",
+        java.sql.Timestamp.class, SourceJobKeys.from(TOPCV)).toInstant())
+        .isEqualTo(CRAWLED.plusHours(1).atZone(java.time.ZoneId.of("Asia/Ho_Chi_Minh")).toInstant()
+            .truncatedTo(java.time.temporal.ChronoUnit.MICROS));
+  }
+
+  @Test
+  void resentMergedCopyIsSkipped() {
+    ingest(crossSite(ITVIEC, POSTED).build());
+    ingest(crossSite(TOPCV, POSTED.plusDays(3)).build());
+    List<String> ops = searchOps();
+    clearInvocations(skillResolutionService, categoryClassificationService);
+
+    ingest(crossSite(TOPCV, POSTED.plusDays(3)).build());
+
+    assertThat(count("job")).isOne();
+    assertThat(count("job_source_mapping")).isEqualTo(2);
+    assertThat(searchOps()).isEqualTo(ops);
+    verifyNoInteractions(skillResolutionService, categoryClassificationService);
+  }
+
+  @Test
+  void updateWithoutDescriptionKeepsTheFingerprint() {
+    ingest(crossSite(ITVIEC, POSTED).build());
+    Map<String, Object> before = jdbc.queryForMap("select content_hash, minhash::text as minhash from job");
+    List<String> bands = bands();
+    assertThat(before.get("content_hash")).isNotNull();
+    assertThat(bands).isNotEmpty();
+
+    ingest(crossSite(ITVIEC, POSTED).crawledAt(CRAWLED.plusDays(1)).description(" ").build());
+
+    assertThat(jdbc.queryForMap("select content_hash, minhash::text as minhash from job")).isEqualTo(before);
+    assertThat(bands()).isEqualTo(bands);
+  }
+
+  /** What the listener does with a message. */
+  private void ingest(JobPostingMessage message) {
+    if (!jobService.tryMergeDuplicate(message)) {
+      jobService.processJobPostingMessage(message);
+    }
+  }
+
+  /** A real crawled posting from {@code src/test/resources/dedup}. */
+  private static JobPostingMessage fixture(String name) throws IOException {
+    JsonNode node;
+    try (InputStream in = JobPostingDedupIT.class.getResourceAsStream("/dedup/" + name + ".json")) {
+      node = new ObjectMapper().readTree(in);
+    }
+    return JobPostingMessage.builder().url(node.get("url").asText()).title(node.get("title").asText())
+        .description(node.get("description").asText()).companyName(node.get("companyName").asText())
+        .location(node.get("location").asText()).experienceMonths(node.get("experienceMonths").asInt())
+        .crawledAt(LocalDateTime.parse(node.get("crawledAt").asText()))
+        .postedDate(LocalDateTime.parse(node.get("postedDate").asText())).build();
+  }
+
+  private List<String> bands() {
+    return jdbc.queryForList("select band_idx || ':' || band_hash from job_lsh_band order by band_idx", String.class);
+  }
+
+  private static JobPostingMessage.JobPostingMessageBuilder crossSite(String url, LocalDateTime postedDate) {
+    return JobPostingMessage.builder().url(url).crawledAt(CRAWLED).postedDate(postedDate).title("Backend Developer")
+        .description(BACKEND_DESCRIPTION).companyName("Acme").location("Hà Nội").maxSalary(2000L);
   }
 
   private void migrate() {

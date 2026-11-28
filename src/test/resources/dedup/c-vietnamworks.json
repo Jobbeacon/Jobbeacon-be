@@ -1,0 +1,20 @@
+{
+  "companyLogoUrl": null,
+  "employmentType": "Full-time",
+  "location": "Hà Nội",
+  "minSalary": null,
+  "maxSalary": null,
+  "currency": "VND",
+  "salaryPeriod": "MONTH",
+  "industry": "IT",
+  "skills": [],
+  "benefits": null,
+  "experienceMonths": 60,
+  "expiredDate": null,
+  "crawledAt": "2026-11-25T10:00:00",
+  "url": "https://www.vietnamworks.com/senior-fullstack-java-developer-good-at-english-1793350235119486825-2126090-jv",
+  "companyName": "Công Ty TNHH LG CNS VIỆT NAM",
+  "title": "Senior Fullstack Java Developer (Good At English)",
+  "description": "You will be responsible for the enhancement and development of an insurance company’s Digital Distribution Channels (online and mobile insurance sales platforms).\nWorking closely with business stakeholders, UX designers, and architecture teams, you will help build a stable, scalable, and customer-centric digital insurance platform.\nThis role also involves collaboration with global stakeholders to support digital channel development tailored to international markets.\nKey Responsibilities\n- Design and develop Digital Distribution Channels (Web / Mobile) for insurance services\n- Implement end-to-end digital channel functionalities, including online insurance enrollment, quotation, policy application, payment, and customer management\n- Perform Java-based full-stack development, covering both back-end and front-end components\n- Integrate with internal and external systems (Core Insurance, Payment, CRM, APIs, etc.)\n- Collaborate and communicate with global development and operations teams\n- Enhance system performance, ensure platform stability, and respond to operational issues\n- Adhere to development standards, security policies, and financial industry regulatory requirements\nYêu cầu công việc\n- 5 years of experience in Java Full Stack development\n- Experience in financial services (insurance or banking) digital channel development\n- Strong experience with Java, Spring, and Spring Boot for back-end development\n- Experience with front-end technologies such as JavaScript, HTML5, CSS, and at least one modern framework (React, Vue, or Angular)\n- Hands-on experience in RESTful API design and integration\n- Experience in RDBMS-based system design and development\n- Business-level English communication skills (mandatory)\n- Proficiency in English (Toeic 700+, business communication), sufficient for business discussions, technical meetings, and documentation\n- Experience working in global or multicultural collaboration environments.\n- Domain knowledge of insurance digital channels, such as online policy enrollment, application, and customer portals\n- Experience handling high-traffic systems or global service platforms\n- Experience with Microservices Architecture and cloud platforms (AWS, Azure, or GCP)\n- Understanding of CI/CD pipelines and DevOps environments",
+  "postedDate": "2026-10-30T00:00:00"
+}

@@ -1,0 +1,20 @@
+{
+  "companyLogoUrl": null,
+  "employmentType": "Full-time",
+  "location": "Hà Nội",
+  "minSalary": null,
+  "maxSalary": null,
+  "currency": "VND",
+  "salaryPeriod": "MONTH",
+  "industry": "IT",
+  "skills": [],
+  "benefits": null,
+  "experienceMonths": 60,
+  "expiredDate": null,
+  "crawledAt": "2026-11-25T10:00:00",
+  "url": "https://itviec.com/viec-lam-it/fullstack-java-developer-insurance-banking-domain-lg-cns-viet-nam-2303",
+  "companyName": "LG CNS Việt Nam",
+  "title": "Fullstack Java Developer (Insurance/ Banking Domain)",
+  "description": "Key Responsibilities\n• Design and develop Digital Distribution Channels (Web / Mobile) for insurance / banking services\n• Implement end-to-end digital channel functionalities, including online insurance / banking enrollment, quotation, policy application, payment, and customer management\n• Perform Java-based full-stack development, covering both back-end and front-end components\n• Integrate with internal and external systems (Core Insurance, Payment, CRM, APIs, etc.)\n• Collaborate and communicate with global development and operations teams\n• Enhance system performance, ensure platform stability, and respond to operational issues\n• Adhere to development standards, security policies, and financial industry regulatory requirements\nYêu cầu công việc\nRequired Qualifications\n• 5+ years of experience in Java Full Stack development\n• Strong experience with Java, Spring, and Spring Boot for back-end development\n• Experience with front-end technologies such as JavaScript, HTML5, CSS, and at least one modern framework (React, Vue, or Angular)\n• Hands-on experience in RESTful API design and integration\n• Experience in RDBMS-based system design and development\n• Business-level English communication skills (mandatory) sufficient for business discussions, technical meetings, and documentation\n• Experience working in global or multicultural collaboration environments\nPreferred Qualifications\n• Experience in financial services (insurance or banking) digital channel development\n• Domain knowledge of insurance digital channels, such as online policy enrollment, application, and customer portals\n• Experience handling high-traffic systems or global service platforms",
+  "postedDate": "2026-11-25T05:00:00"
+}

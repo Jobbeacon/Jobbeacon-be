@@ -15,6 +15,7 @@ import java.util.UUID;
 
 public interface JobService {
     void processJobPostingMessage(JobPostingMessage message);
+    boolean tryMergeDuplicate(JobPostingMessage message);
     ResponseGeneral<PageResponse<JobSummaryResponse>> searchJobs(JobSearchRequest jobSearchRequest);
     ResponseGeneral<JobDetailResponse> getJobDetail(UUID jobId);
 

@@ -1,0 +1,20 @@
+{
+  "companyLogoUrl": null,
+  "employmentType": "Full-time",
+  "location": "Hà Nội",
+  "minSalary": null,
+  "maxSalary": null,
+  "currency": "VND",
+  "salaryPeriod": "MONTH",
+  "industry": "IT",
+  "skills": [],
+  "benefits": null,
+  "expiredDate": null,
+  "crawledAt": "2026-11-25T10:00:00",
+  "url": "https://www.vietnamworks.com/sap-abap-developer-1793606711782788031-2126831-jv",
+  "companyName": "Công Ty TNHH LG CNS VIỆT NAM",
+  "title": "SAP ABAP Developer",
+  "description": "Mô tả công việc\n• Design, develop, and maintain SAP ABAP programs using Classic ABAP (procedural & OO).\n• Develop and enhance CDS Views and RAP-based applications for SAP S/4HANA.\n• Perform development using both SAP GUI (SE80) and Eclipse (ADT).\n• Build SAP UI components including ALV, Module Pool, and SmartForms.\n• Develop ERP module-related features and integrate systems using RFC, IDoc, BDC.\n• Implement and manage SAP enhancements: BAdI, User Exit, Enhancement Framework, ensuring system consistency and data integrity.\n• Support S/4HANA conversion projects, including code adaptation and performance tuning.\n• Analyze and optimize program performance using efficient SQL, CDS, and HANA optimized techniques.\n• Adhere strictly to Clean ABAP standards and internal development guidelines.\n• Collaborate with functional consultants, project managers, and global stakeholders to deliver high-quality solutions.\nYêu cầu công việc\n[Required]\n• Bachelor's degree in computer science, Software Engineering, or a related field.\n• 3 years of hands-on SAP ABAP development experience.\n• Strong skills in Classic ABAP (procedural & object-oriented).\n• Solid understanding of SQL and ABAP Dictionary.\n• Practical experience with RAP and CDS View development.\n• Good experience working with SAP GUI (SE80).\n• Hands-on experience with ALV, Module Pool, SmartForms.\n• Experience in ERP module development and system integration (RFC, IDoc, BDC).\n• Strong experience implementing SAP enhancements (BAdI, User Exit).\n• Ability to work in secure, confidential environments following strict data protection rules.\n• Willingness to travel or work in Korea for short-term or long-term assignments if required.\n[Preferred]\n• Experience with HANA SQL Script (AMDP).\n• Experience using Eclipse (ADT) for ABAP development.\n• Experience with S/4HANA conversion, code remediation, and performance improvement.\n• Knowledge of OZ Report.\n• Strong adherence to Clean ABAP principles.\n• High motivation to learn new SAP technologies and continuously upgrade technical skills.",
+  "experienceMonths": 24,
+  "postedDate": "2026-11-02T00:00:00"
+}

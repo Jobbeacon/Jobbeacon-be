@@ -17,9 +17,21 @@ public class JobPostingListener {
     public void handleJobPostingMessage(JobPostingMessage message) {
         log.debug("Received job posting: {}", message);
         try {
+            if (mergeDuplicate(message)) {
+                return;
+            }
             jobService.processJobPostingMessage(message);
         } catch (Exception e) {
             log.error("Error processing job posting message: ", e);
+        }
+    }
+
+    private boolean mergeDuplicate(JobPostingMessage message) {
+        try {
+            return jobService.tryMergeDuplicate(message);
+        } catch (Exception e) {
+            log.warn("(handleJobPostingMessage) duplicate merge failed, processing as new job: {}", e.toString());
+            return false;
         }
     }
 }

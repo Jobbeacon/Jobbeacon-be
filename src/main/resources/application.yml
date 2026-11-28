@@ -41,6 +41,8 @@ spring:
     port: ${RABBITMQ_PORT:5672}
     username: ${RABBITMQ_USERNAME:guest}
     password: ${RABBITMQ_PASSWORD:guest}
+    # IntegrationEventPublisher waits for the broker's confirm of each event.
+    publisher-confirm-type: simple
     listener:
       simple:
         # RabbitMQ closes the channel when a delivered message is not acked within 30 minutes, and the prefetched ones
@@ -48,6 +50,18 @@ spring:
         prefetch: ${RABBITMQ_PREFETCH:5}
 
 app:
+  job-dedup:
+    enabled: ${JOB_DEDUP_ENABLED:true}
+    jaccard-threshold: ${JOB_DEDUP_JACCARD_THRESHOLD:0.8}
+    title-threshold: ${JOB_DEDUP_TITLE_THRESHOLD:0.8}
+    salary-tolerance: ${JOB_DEDUP_SALARY_TOLERANCE:0.5}
+    high-content-threshold: ${JOB_DEDUP_HIGH_CONTENT_THRESHOLD:0.9}
+    relaxed-title-threshold: ${JOB_DEDUP_RELAXED_TITLE_THRESHOLD:0.3}
+    no-title-threshold: ${JOB_DEDUP_NO_TITLE_THRESHOLD:0.95}
+    containment-threshold: ${JOB_DEDUP_CONTAINMENT_THRESHOLD:0.85}
+    containment-title-threshold: ${JOB_DEDUP_CONTAINMENT_TITLE_THRESHOLD:0.6}
+    containment-min-shingles: ${JOB_DEDUP_CONTAINMENT_MIN_SHINGLES:100}
+    short-text-shingles: ${JOB_DEDUP_SHORT_TEXT_SHINGLES:100}
   geocode:
     enabled: true
     base-url: https://nominatim.openstreetmap.org/search
@@ -59,6 +73,8 @@ app:
   rabbitmq:
     job-posting:
       queue: job-posting.parsed
+    events:
+      exchange: ${EVENTS_EXCHANGE:jobbeacon.events}
   admin:
     # Emails promoted to ADMIN when they sign in (comma separated). Used to bootstrap the first admin.
     emails: ${APP_ADMIN_EMAILS:}
@@ -124,6 +140,9 @@ app:
     min-salary-sample: ${MARKET_MIN_SALARY_SAMPLE:5}
   search:
     backfill-on-startup: ${SEARCH_BACKFILL_ON_STARTUP:false}
+  user-contact:
+    # Resends user.upserted for every user at startup (UserContactBackfillRunner). Turn on once, then back off.
+    backfill-on-startup: ${USER_CONTACT_BACKFILL_ON_STARTUP:false}
 
 server:
   port: ${PORT:8080}

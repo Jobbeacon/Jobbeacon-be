@@ -7,6 +7,7 @@ import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
+import org.hibernate.Length;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
@@ -64,6 +65,16 @@ public class Job extends BaseEntity {
 
     @Column(name = "benefits", columnDefinition = "TEXT")
     private String benefits;
+
+    @Column(name = "title_normalized", length = Length.LONG32)
+    private String titleNormalized;
+
+    @Column(name = "content_hash", length = 64)
+    private String contentHash;
+
+    @JdbcTypeCode(SqlTypes.ARRAY)
+    @Column(name = "minhash", columnDefinition = "integer[]")
+    private int[] minhash;
 
     @ManyToMany(fetch = FetchType.LAZY)
     @JoinTable(
